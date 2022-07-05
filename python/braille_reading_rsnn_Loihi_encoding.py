@@ -28,7 +28,7 @@ from sklearn.metrics import confusion_matrix
 
 # In[182]:
 
-
+from matplotlib.gridspec import GridSpec
 # set variables
 # multiple_gpus = True # set to 'True' if more than 1 GPU available
 use_nni_weights = False  # set to 'True' for use of weights from NNI optimization
@@ -101,8 +101,8 @@ def load_and_extract_augmented(params, file_name, taxels=None, letter_written=le
 
     max_time = int(54 * 25)  # ms
     time_bin_size = int(params['time_bin_size'])  # ms
-    global time
-    time = range(0, max_time, time_bin_size)
+    # global time
+    # time = range(0, max_time, time_bin_size)
     ## Increase max_time to make sure no timestep is cut due to fractional amount of steps
     global time_step
     time_step = time_bin_size * 0.001
@@ -167,9 +167,6 @@ def run_snn(inputs, enc_params, layers):
     # enc_gain = enc_params[0]
     # enc_bias = enc_params[1]
     # encoder_currents = torch.einsum("abc,c->ab", (inputs.tile((enc_fan_out,)), enc_gain))+enc_bias
-    print(enc_params[0].shape)
-    print(enc_params[1].shape)
-    print(inputs.shape)
     encoder_currents = enc_params[0] * (inputs.tile((nb_input_copies,)) + enc_params[1]) #TODO Understand why the enc_bias is inside the par.
     for t in range(nb_steps):
         # Compute encoder activity24
@@ -194,12 +191,14 @@ def run_snn(inputs, enc_params, layers):
         mem = new_mem * (1.0 - rst)
         syn = new_syn
 
+        enc_rec.append(new_enc)
         mem_rec.append(mem)
         spk_rec.append(out)
 
     # Now we merge the recorded membrane potentials into a single tensor
     mem_rec = torch.stack(mem_rec, dim=1)
     spk_rec = torch.stack(spk_rec, dim=1)
+    enc_rec = torch.stack(enc_rec, dim=1)
 
     # Readout layer
     h2 = torch.einsum("abc,cd->abd", (spk_rec, layers[1]))
@@ -228,6 +227,9 @@ def run_snn(inputs, enc_params, layers):
     other_recs = [mem_rec, spk_rec, s_out_rec]
     layers_update = layers
 
+    fig = plt.figure(dpi=150, figsize=(7, 3))
+    plot_voltage_traces(enc_rec[:, :, :24], spk_rec[:, :, :24], color="black", alpha=0.2)
+    plt.show()
     return out_rec, other_recs, layers_update
 
 
@@ -253,6 +255,20 @@ def load_layers(file, map_location, requires_grad=True, variable=False):
 
 
 # In[191]:
+
+def plot_voltage_traces(mem, spk=None, dim=(3,5), spike_height=5, **kwargs):
+    gs=GridSpec(*dim)
+    if spk is not None:
+        dat = 1.0*mem
+        dat[spk>0.0] = spike_height
+        dat = dat.detach().cpu().numpy()
+    else:
+        dat = mem.detach().cpu().numpy()
+    for i in range(np.prod(dim)):
+        if i==0: a0=ax=plt.subplot(gs[i])
+        else: ax=plt.subplot(gs[i],sharey=a0)
+        ax.plot(dat[i], **kwargs)
+        ax.axis("off")
 
 
 ### Here, this function is only used to define the global variables to be used in other functions
@@ -415,6 +431,8 @@ def train(params, dataset, lr=0.0015, nb_epochs=300, opt_parameters=None, layers
             tmp = np.mean((y_local == am).detach().cpu().numpy())
             accs.append(tmp)
 
+
+
         mean_loss = np.mean(local_loss)
         loss_hist.append(mean_loss)
 
@@ -428,7 +446,8 @@ def train(params, dataset, lr=0.0015, nb_epochs=300, opt_parameters=None, layers
                 params,
                 dataset_test,
                 layers=layers_update,
-                early=True
+                early=True,
+                enc_params=params_enc
             )
             accs_hist[1].append(test_acc)  # only safe best test
             ttc_hist.append(test_ttc)
@@ -446,25 +465,28 @@ def train(params, dataset, lr=0.0015, nb_epochs=300, opt_parameters=None, layers
                 for ii in layers_update:
                     best_acc_layers.append(ii.detach().clone())
 
-        print("Epoch {}/{} done. Train accuracy: {:.2f}%, Test accuracy: {:.2f}%.".format(e + 1, nb_epochs,
+        print("Epoch {}/{} done. Train accuracy: {:.2f}%, Test accuracy: {:.2f}% , Loss: {:.2f}.".format(e + 1, nb_epochs,
                                                                                           accs_hist[0][-1] * 100,
-                                                                                          accs_hist[1][-1] * 100))
+                                                                                          accs_hist[1][-1] * 100,mean_loss))
 
     return loss_hist, accs_hist, best_acc_layers, ttc_hist
 
 
 # In[194]:
 
-def interpolate_data(data_dict):
+def interpolate_data(data_dict,interpolate_size = 1000):
     from scipy.interpolate import interp1d
     for data in data_dict:
+        data['taxel_data_interp'] = []
+
         for sensor_idx in range(data['taxel_data'].shape[1]):
             time_interp = np.arange(0, len(data_dict[0]['taxel_data'][:, sensor_idx]) - 1,
-                                    len(data_dict[0]['taxel_data'][:, sensor_idx]) / 1000)
+                                     len(data_dict[0]['taxel_data'][:, sensor_idx])/ interpolate_size)
 
             old_time = np.arange(0, len(data['taxel_data'][:, sensor_idx]))
             f = interp1d(old_time, data['taxel_data'][:, sensor_idx])
-            data['taxel_data_interp'] = f(time_interp)
+            data['taxel_data_interp'].append(f(time_interp))
+        data['taxel_data_interp'] = np.array(data['taxel_data_interp']).T
     return data_dict
 
 
@@ -556,7 +578,7 @@ def build_and_train(params, ds_train, ds_test, epochs=epochs):
 # In[195]:
 
 
-def compute_classification_accuracy(params, dataset, layers=None, early=False):
+def compute_classification_accuracy(params, dataset, layers=None, early=False,enc_params = None):
     """ Computes classification accuracy on supplied data in batches. """
 
     generator = DataLoader(dataset, batch_size=128,
@@ -571,7 +593,7 @@ def compute_classification_accuracy(params, dataset, layers=None, early=False):
             layers = [w1, w2, v1]
             output, others, _ = run_snn(x_local, layers)
         else:
-            output, others, _ = run_snn(x_local, layers)
+            output, others, _ = run_snn(x_local, enc_params, layers)
         # with output spikes
         m = torch.sum(others[-1], 1)  # sum over time
         _, am = torch.max(m, 1)  # argmax over output units
@@ -695,6 +717,12 @@ def load_analog_data():
     with gzip.open(file_name, 'rb') as infile:
         data_dict = pickle.load(infile)
 
+    max_time = int(54*25) #ms
+    time_bin_size = int(params['time_bin_size']) # ms
+    global time
+    time = range(0,max_time,time_bin_size)
+
+
     letter_written = ['Space', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K',
                       'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z']
     nb_channels = data_dict[0]['taxel_data'].shape[1]
@@ -704,7 +732,7 @@ def load_analog_data():
     data = []
     labels = []
 
-    data_dict = interpolate_data(data_dict)
+    data_dict = interpolate_data(data_dict,interpolate_size=500)
     for i, letter in enumerate(letter_written):
         for repetition in np.arange(nb_repetitions):
             idx = i * nb_repetitions + repetition
@@ -712,9 +740,11 @@ def load_analog_data():
             data.append(dat)
             labels.append(i)
 
+
+
     # Crop to same length
     data_steps = l = np.min([len(d) for d in data])
-    data = torch.tensor([d[:l] for d in data], dtype=dtype)
+    data = torch.tensor(np.array([d[:l] for d in data]), dtype=dtype)
     labels = torch.tensor(labels, dtype=torch.long)
 
     # nb_upsample = 2
