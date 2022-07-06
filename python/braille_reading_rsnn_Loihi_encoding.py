@@ -164,16 +164,19 @@ def run_snn(inputs, enc_params, layers):
     enc_rec = []
     mem_rec = []
     spk_rec = []
-    # enc_gain = enc_params[0]
+    spk_input = []
+    # enc_gain = enc_params[0]braille_reading_rsnn_Loihi
     # enc_bias = enc_params[1]
     # encoder_currents = torch.einsum("abc,c->ab", (inputs.tile((enc_fan_out,)), enc_gain))+enc_bias
     encoder_currents = enc_params[0] * (inputs.tile((nb_input_copies,)) + enc_params[1]) #TODO Understand why the enc_bias is inside the par.
     for t in range(nb_steps):
         # Compute encoder activity24
         new_enc = (beta * enc + (1.0 - beta) * encoder_currents[:, t]) * (1.0 - input_spk.detach())
+        #new_enc = (beta * enc + encoder_currents[:, t]) * (1.0 - input_spk.detach())
         input_spk = spike_fn(new_enc - 1.0) #TODO check if is new_enc or enc?
 
         # Compute hidden layer activity
+        #h1 = encoder_currents[:, t].mm(layers[0]) + torch.einsum("ab,bc->ac", (out, layers[2]))
         h1 = input_spk.mm(layers[0]) + torch.einsum("ab,bc->ac", (out, layers[2]))
         enc = new_enc
         # Up to here is what i pasted from zenke, dear lyes
@@ -194,12 +197,29 @@ def run_snn(inputs, enc_params, layers):
         enc_rec.append(new_enc)
         mem_rec.append(mem)
         spk_rec.append(out)
+        spk_input.append(input_spk)
 
     # Now we merge the recorded membrane potentials into a single tensor
     mem_rec = torch.stack(mem_rec, dim=1)
     spk_rec = torch.stack(spk_rec, dim=1)
     enc_rec = torch.stack(enc_rec, dim=1)
-
+    spk_input = torch.stack(spk_input, dim =1)
+    #plt.plot(mem_rec[0,:,:].cpu().detach().numpy())
+    #tx, idx = np.where(spk_rec[0].cpu().detach().numpy())
+    #plt.figure(figsize=(12,12))
+    #plt.scatter(tx, idx)
+    #plt.show()
+    time_range = np.array([i for i in range(494)])
+    # plt.figure()
+    counter = 0
+    # colors = ['b','g','y','r']
+    # for j in range(4):
+    #     for i in range(24):
+    #         spikes = spk_rec[j,:,i].cpu().detach().numpy()[spk_rec[j,:,i].cpu().detach().numpy() > 0.0]
+    #         time_spikes = time_range[spk_rec[j,:,i].cpu().detach().numpy()>0.0]
+    #         plt.plot(time_spikes,spikes+counter,'.',color = colors[j])
+    #         counter += 1
+    # plt.show()
     # Readout layer
     h2 = torch.einsum("abc,cd->abd", (spk_rec, layers[1]))
     flt = torch.zeros((bs, nb_outputs), device=device, dtype=dtype)
@@ -227,8 +247,13 @@ def run_snn(inputs, enc_params, layers):
     other_recs = [mem_rec, spk_rec, s_out_rec]
     layers_update = layers
 
-    fig = plt.figure(dpi=150, figsize=(7, 3))
-    plot_voltage_traces(enc_rec[:, :, :24], spk_rec[:, :, :24], color="black", alpha=0.2)
+    # fig = plt.figure(dpi=150, figsize=(7, 3))
+    # plot_voltage_traces(enc_rec[:, :, :24], spk_rec[:, :, :24], color="black", alpha=0.2)
+    # plt.show()
+    #tx, idx = np.where(s_out_rec[0].cpu().detach().numpy())
+    #plt.figure(figsize=(12,12))
+    #plt.scatter(tx, idx)
+    plt.plot(out_rec[0,:,:].cpu().detach().numpy())
     plt.show()
     return out_rec, other_recs, layers_update
 
@@ -410,6 +435,7 @@ def train(params, dataset, lr=0.0015, nb_epochs=300, opt_parameters=None, layers
             _, spks, _ = recs
             # with output spikes
             m = torch.sum(recs[-1], 1)  # sum over time
+            #m = torch.sum(output,1) #sum over time
             log_p_y = log_softmax_fn(m)
 
             # Here we can set up our regularizer loss
@@ -546,7 +572,7 @@ def build_and_train(params, ds_train, ds_test, epochs=epochs):
     for ii in layers:
         layers_init.append(ii.detach().clone())
 
-    opt_parameters = [w1, w2, v1]
+    opt_parameters = [w1, w2, v1,enc_gain,enc_bias]
 
     # a fixed learning rate is already defined within the train function, that's why here it is omitted
     loss_hist, accs_hist, best_layers, _ = train(params, ds_train, nb_epochs=epochs, opt_parameters=opt_parameters,
