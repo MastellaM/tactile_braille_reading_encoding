@@ -33,7 +33,7 @@ from matplotlib.gridspec import GridSpec
 # multiple_gpus = True # set to 'True' if more than 1 GPU available
 use_nni_weights = False  # set to 'True' for use of weights from NNI optimization
 use_seed = False  # set seed to achive reproducable results
-threshold = 10  # possible values are: 1, 2, 5, 10
+threshold = "enc" # possible values are: 1, 2, 5, 10
 run = "_3"  # run number for statistics
 epochs = 300  # 300 # set the number of epochs you want to train the network here
 torch.manual_seed(0)
@@ -431,7 +431,7 @@ def train(params, dataset, lr=0.0015, nb_epochs=300, opt_parameters=None, layers
         parameters = [w1, w2, v1]
         layers = [w1, w2, v1]
 
-    optimizer = torch.optim.Adamax(parameters, lr=0.0015, betas=(0.9, 0.995))  # params['lr']
+    optimizer = torch.optim.Adamax(parameters, lr=0.0005, betas=(0.9, 0.995))  # params['lr'] lr=0.0015
 
     log_softmax_fn = nn.LogSoftmax(dim=1)  # The log softmax function across output units
     loss_fn = nn.NLLLoss()  # The negative log likelihood loss function
@@ -550,9 +550,9 @@ def build_and_train(params, ds_train, ds_test, epochs=epochs):
     tau_syn = tau_mem / params['tau_ratio']
 
     global alpha
-    alpha = float(np.exp(-params['time_step'] / tau_syn))
+    alpha = float(np.exp(-params['time_bin_size']*0.001 / tau_syn))
     global beta
-    beta = float(np.exp(-params['time_step'] / tau_mem))
+    beta = float(np.exp(-params['time_bin_size']*0.001 / tau_mem))
 
     fwd_weight_scale = params['fwd_weight_scale']
     rec_weight_scale = params['weight_scale_factor'] * fwd_weight_scale
@@ -767,18 +767,19 @@ def load_analog_data():
 
     letter_written = ['Space', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K',
                       'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z']
-    nb_channels = data_dict[0]['taxel_data'].shape[1]
+    # nb_channels = data_dict[0]['taxel_data'].shape[1]
+    nb_channels = 4 #We did it because Zenke takes 4 sensors
     # Extract data
     nb_repetitions = 50
 
     data = []
     labels = []
 
-    data_dict = interpolate_data(data_dict,interpolate_size=500)
+    # data_dict = interpolate_data(data_dict,interpolate_size=500)
     for i, letter in enumerate(letter_written):
         for repetition in np.arange(nb_repetitions):
             idx = i * nb_repetitions + repetition
-            dat = 1.0 - data_dict[idx]['taxel_data_interp'][:] / 255
+            dat = 1.0 - data_dict[idx]['taxel_data'][:] / 255
             data.append(dat)
             labels.append(i)
 
@@ -789,12 +790,18 @@ def load_analog_data():
     data = torch.tensor(np.array([d[:l] for d in data]), dtype=dtype)
     labels = torch.tensor(labels, dtype=torch.long)
 
-    # nb_upsample = 2
-    # data = upsample(data, n=nb_upsample)
+    # Select nonzero inputs
+    nzid = [1, 2, 6, 10]
+    data = data[:, :, nzid]
+
+
 
     # Standardize data
     rshp = data.reshape((-1, data.shape[2]))
     data = (data - rshp.mean(0)) / (rshp.std(0) + 1e-3)
+
+    nb_upsample = 2
+    data = upsample(data, n=nb_upsample)
 
     # Shuffle data
     idx = np.arange(len(data))
