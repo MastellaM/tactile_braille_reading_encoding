@@ -36,7 +36,7 @@ use_seed = False  # set seed to achive reproducable results
 threshold = 10  # possible values are: 1, 2, 5, 10
 run = "_3"  # run number for statistics
 epochs = 300  # 300 # set the number of epochs you want to train the network here
-
+torch.manual_seed(0)
 # In[183]:
 
 
@@ -220,12 +220,14 @@ def run_snn(inputs, enc_params, layers):
     #         plt.plot(time_spikes,spikes+counter,'.',color = colors[j])
     #         counter += 1
     # plt.show()
+    # print(layers[1].shape)
     # Readout layer
     h2 = torch.einsum("abc,cd->abd", (spk_rec, layers[1]))
     flt = torch.zeros((bs, nb_outputs), device=device, dtype=dtype)
     out = torch.zeros((bs, nb_outputs), device=device, dtype=dtype)
     s_out_rec = [out]  # out is initialized as zeros, so it is fine to start with this
     out_rec = [out]
+    flt_rec = []
     for t in range(nb_steps):
         # LK: leak and integrate
         new_flt = alpha * flt + h2[:, t]
@@ -241,20 +243,34 @@ def run_snn(inputs, enc_params, layers):
 
         out_rec.append(out)
         s_out_rec.append(s_out)
-
+        flt_rec.append(flt)
     out_rec = torch.stack(out_rec, dim=1)
     s_out_rec = torch.stack(s_out_rec, dim=1)
+    flt_rec = torch.stack(flt_rec, dim = 1)
     other_recs = [mem_rec, spk_rec, s_out_rec]
     layers_update = layers
-
     # fig = plt.figure(dpi=150, figsize=(7, 3))
     # plot_voltage_traces(enc_rec[:, :, :24], spk_rec[:, :, :24], color="black", alpha=0.2)
     # plt.show()
-    #tx, idx = np.where(s_out_rec[0].cpu().detach().numpy())
-    #plt.figure(figsize=(12,12))
-    #plt.scatter(tx, idx)
-    plt.plot(out_rec[0,:,:].cpu().detach().numpy())
-    plt.show()
+    tx, idx = np.where(s_out_rec[0].cpu().detach().numpy())
+    # plt.figure(figsize=(12,12))
+    # print(idx.shape)
+    # plt.scatter(tx, idx)
+    # plt.show()
+    # plt.imshow(layers[0].cpu().detach().numpy(), aspect='auto')
+    # plt.colorbar()
+    # plt.figure()
+    # plt.plot(mem_rec[0,:,:].cpu().detach().numpy())
+    # plt.figure()
+    # plt.plot(spk_rec[0,:,:].cpu().detach().numpy())
+    # plt.figure()
+    # plt.plot(out_rec[0,:,:].cpu().detach().numpy())
+    # plt.figure()
+    # plt.plot(s_out_rec[0,:,:].cpu().detach().numpy())
+    # plt.figure()
+    # plt.imshow(layers[1].cpu().detach().numpy(),aspect = 'auto')
+    # plt.colorbar()
+    # plt.show()
     return out_rec, other_recs, layers_update
 
 
@@ -366,8 +382,8 @@ def build_and_predict(params, x, use_nni_weights):
 
         enc_params = []
         # Encoder
-        enc_gain = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=True)
-        enc_bias = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=True)
+        enc_gain = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=False)
+        enc_bias = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=False)
         torch.nn.init.normal_(enc_gain, mean=0.0, std=encoder_weight_scale)  # TODO update this parameter
         torch.nn.init.normal_(enc_bias, mean=0.0, std=1.0)
 
@@ -776,8 +792,13 @@ def load_analog_data():
     # nb_upsample = 2
     # data = upsample(data, n=nb_upsample)
 
+    # Standardize data
+    rshp = data.reshape((-1, data.shape[2]))
+    data = (data - rshp.mean(0)) / (rshp.std(0) + 1e-3)
+
     # Shuffle data
     idx = np.arange(len(data))
+    np.random.seed(0)
     np.random.shuffle(idx)
     data = data[idx]
     labels = labels[idx]
