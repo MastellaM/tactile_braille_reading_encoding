@@ -768,7 +768,7 @@ def load_analog_data():
     letter_written = ['Space', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K',
                       'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z']
     # nb_channels = data_dict[0]['taxel_data'].shape[1]
-    nb_channels = 4 #We did it because Zenke takes 4 sensors
+    nb_channels = 12 #We did it because Zenke takes 4 sensors
     # Extract data
     nb_repetitions = 50
 
@@ -791,8 +791,8 @@ def load_analog_data():
     labels = torch.tensor(labels, dtype=torch.long)
 
     # Select nonzero inputs
-    nzid = [1, 2, 6, 10]
-    data = data[:, :, nzid]
+    # nzid = [1, 2, 6, 10]
+    # data = data[:, :, nzid]
 
 
 
