@@ -162,7 +162,7 @@ class MN_neuron(nn.Module):
 
         self.linear = nn.Linear(n_in, n_out, bias=False)
         # torch.nn.init.eye_(self.linear.weight)
-        torch.nn.init.constant_(self.linear.weight, 2.0)
+        # torch.nn.init.constant_(self.linear.weight, 2.0)
         self.C = 1
 
         self.EL = -0.07
@@ -215,6 +215,9 @@ class MN_neuron(nn.Module):
 
         return spk
 
+    def reset(self):
+        self.state = None
+
 
 class SurrGradSpike(torch.autograd.Function):
     scale = 20.0  # controls steepness of surrogate gradient
@@ -241,49 +244,49 @@ activation = SurrGradSpike.apply
 
 from torch.nn import parameter
 
-DEVICE = "cpu"
-n_in = 1
-n_out = 2
-BATCH_SIZE = 1
-TOTTIME = 1000
-Ie = torch.tensor(1.5).view(1, 1)
-
-Net = MN_neuron(n_in, n_out, 5., 0., 0.)
-
-optimizer = torch.optim.SGD(params=Net.parameters(), lr=1e-2)
-for epoch in range(200):
-    spikes = 0
-    voltages = []
-    for t in range(100):
-        spikes += Net(Ie)
-        voltages.append(Net.state.V.clone().detach().cpu().numpy())
-
-    voltages = np.stack(voltages)
-    mse = torch.sum((spikes - torch.tensor([8, 4])) ** 2)
-
-    optimizer.zero_grad()
-    # Loss = torch.nn.MSELoss()
-    # mse = Loss(spikes[t], torch.ones_like(spikes[t]))
-    mse.backward()
-    optimizer.step()
-
-    for state in Net.state:
-        state.detach_()
+# DEVICE = "cpu"
+# n_in = 1
+# n_out = 2
+# BATCH_SIZE = 1
+# TOTTIME = 1000
+# Ie = torch.tensor(1.5).view(1, 1)
+#
+# Net = MN_neuron(n_in, n_out, 5., 0., 0.)
+#
+# optimizer = torch.optim.SGD(params=Net.parameters(), lr=1e-2)
+# for epoch in range(200):
+#     spikes = 0
+#     voltages = []
+#     for t in range(100):
+#         spikes += Net(Ie)
+#         voltages.append(Net.state.V.clone().detach().cpu().numpy())
+#
+#     voltages = np.stack(voltages)
+#     mse = torch.sum((spikes - torch.tensor([8, 4])) ** 2)
+#
+#     optimizer.zero_grad()
+#     # Loss = torch.nn.MSELoss()
+#     # mse = Loss(spikes[t], torch.ones_like(spikes[t]))
+#     mse.backward()
+#     optimizer.step()
+#
+#     for state in Net.state:
+#         state.detach_()
 
     # make_dot(mse, params=dict(Net.named_parameters()))
 
 # In[ ]:
 
 
-import numpy as np
+#import numpy as np
 import matplotlib.pyplot as plt
 
-plt.plot(voltages[:, 0, :])
+# plt.plot(voltages[:, 0, :])
 
 # In[ ]:
 
 
-Net.a
+#Net.a
 
 #end of MN neuron
 n_in = 32*12
@@ -297,15 +300,18 @@ def run_snn(inputs, enc_params, layers):
     syn = torch.zeros((bs, nb_hidden), device=device, dtype=dtype)
     mem = -1e-3 * torch.ones((bs, nb_hidden), device=device, dtype=dtype)
     out = torch.zeros((bs, nb_hidden), device=device, dtype=dtype)
+    mn.reset()
 
     enc_rec = []
     mem_rec = []
     spk_rec = []
     spk_input = []
+    mn_mem = []
     # enc_gain = enc_params[0]braille_reading_rsnn_Loihi
     # enc_bias = enc_params[1]
     # encoder_currents = torch.einsum("abc,c->ab", (inputs.tile((enc_fan_out,)), enc_gain))+enc_bias
     encoder_currents = enc_params[0] * (inputs.tile((nb_input_copies,)) + enc_params[1]) #TODO Understand why the enc_bias is inside the par.
+    print(encoder_currents.shape)
     for t in range(nb_steps):
         # Compute encoder activity24
         # Input layer with CUBA neurons
@@ -315,16 +321,11 @@ def run_snn(inputs, enc_params, layers):
 
         #Input layer with MN neurons
         input_spk = mn(encoder_currents[:, t])
-        print()
-        tx, idx = np.where(input_spk[0].cpu().detach().numpy())
-        plt.figure(figsize=(12,12))
-        plt.scatter(tx, idx)
-        plt.show()
 
         # Compute hidden layer activity
         #h1 = encoder_currents[:, t].mm(layers[0]) + torch.einsum("ab,bc->ac", (out, layers[2]))
         h1 = input_spk.mm(layers[0]) + torch.einsum("ab,bc->ac", (out, layers[2]))
-        enc = new_enc
+        # enc = new_enc
         # Up to here is what i pasted from zenke, dear lyes
 
         # LK: leak and integrate
@@ -340,16 +341,25 @@ def run_snn(inputs, enc_params, layers):
         mem = new_mem * (1.0 - rst)
         syn = new_syn
 
-        enc_rec.append(new_enc)
+        # enc_rec.append(new_enc)
         mem_rec.append(mem)
         spk_rec.append(out)
         spk_input.append(input_spk)
+        mn_mem.append(mn.state.V)
+
 
     # Now we merge the recorded membrane potentials into a single tensor
     mem_rec = torch.stack(mem_rec, dim=1)
     spk_rec = torch.stack(spk_rec, dim=1)
-    enc_rec = torch.stack(enc_rec, dim=1)
+    # enc_rec = torch.stack(enc_rec, dim=1)
     spk_input = torch.stack(spk_input, dim =1)
+    mn_mem = torch.stack(mn_mem, dim =1)
+
+    #tx, idx = np.where(spk_input[1].cpu().detach().numpy())
+    #plt.figure(figsize=(12, 12))
+    #plt.plot(mn_mem[0].cpu().detach().numpy())
+    #plt.scatter(tx, idx)
+    #plt.show()
     #plt.plot(mem_rec[0,:,:].cpu().detach().numpy())
     #tx, idx = np.where(spk_rec[0].cpu().detach().numpy())
     #plt.figure(figsize=(12,12))
@@ -400,7 +410,7 @@ def run_snn(inputs, enc_params, layers):
     # fig = plt.figure(dpi=150, figsize=(7, 3))
     # plot_voltage_traces(enc_rec[:, :, :24], spk_rec[:, :, :24], color="black", alpha=0.2)
     # plt.show()
-    tx, idx = np.where(s_out_rec[0].cpu().detach().numpy())
+    #tx, idx = np.where(s_out_rec[0].cpu().detach().numpy())
     # plt.figure(figsize=(12,12))
     # print(idx.shape)
     # plt.scatter(tx, idx)
