@@ -249,6 +249,8 @@ def run_snn(inputs, enc_params, layers):
     flt_rec = torch.stack(flt_rec, dim = 1)
     other_recs = [mem_rec, spk_rec, s_out_rec]
     layers_update = layers
+    enc_params_update = enc_params
+    # print(enc_params_update[0].shape)
     # fig = plt.figure(dpi=150, figsize=(7, 3))
     # plot_voltage_traces(enc_rec[:, :, :24], spk_rec[:, :, :24], color="black", alpha=0.2)
     # plt.show()
@@ -271,7 +273,7 @@ def run_snn(inputs, enc_params, layers):
     # plt.imshow(layers[1].cpu().detach().numpy(),aspect = 'auto')
     # plt.colorbar()
     # plt.show()
-    return out_rec, other_recs, layers_update
+    return out_rec, other_recs, layers_update, enc_params_update
 
 
 # In[190]:
@@ -441,13 +443,17 @@ def train(params, dataset, lr=0.0015, nb_epochs=300, opt_parameters=None, layers
     # The optimization loop
     loss_hist = []
     accs_hist = [[], []]
+    layers_mean = [[],[],[]]
+    enc_mean = [[],[]]
     for e in range(nb_epochs):
         local_loss = []
         # accs: mean training accuracies for each batch
         accs = []
         for x_local, y_local in generator:
             x_local, y_local = x_local.to(device), y_local.to(device)
-            output, recs, layers_update = run_snn(x_local, params_enc,layers)
+            output, recs, layers_update,enc_params_update = run_snn(x_local, params_enc,layers)
+            # print(len(layers_update))
+            # print(layers_update[0].shape)
             _, spks, _ = recs
             # with output spikes
             m = torch.sum(recs[-1], 1)  # sum over time
@@ -506,12 +512,22 @@ def train(params, dataset, lr=0.0015, nb_epochs=300, opt_parameters=None, layers
                 best_acc_layers = []
                 for ii in layers_update:
                     best_acc_layers.append(ii.detach().clone())
+        # print(len(layers_update))
+        # print(layers_update[0].shape)
+
+        for ii_idx,ii in enumerate(layers_update):
+            layers_mean[ii_idx].append(np.mean(ii.cpu().detach().numpy(),axis=1))
+
+        print(enc_params_update[0].shape)
+        for jj_idx,jj in enumerate(enc_params_update):
+            enc_mean[jj_idx].append(jj.cpu().detach().numpy())
+            # print(enc_mean)
 
         print("Epoch {}/{} done. Train accuracy: {:.2f}%, Test accuracy: {:.2f}% , Loss: {:.2f}.".format(e + 1, nb_epochs,
                                                                                           accs_hist[0][-1] * 100,
                                                                                           accs_hist[1][-1] * 100,mean_loss))
 
-    return loss_hist, accs_hist, best_acc_layers, ttc_hist
+    return loss_hist, accs_hist, best_acc_layers, ttc_hist,layers_mean,enc_mean
 
 
 # In[194]:
@@ -591,7 +607,7 @@ def build_and_train(params, ds_train, ds_test, epochs=epochs):
     opt_parameters = [w1, w2, v1,enc_gain,enc_bias]
 
     # a fixed learning rate is already defined within the train function, that's why here it is omitted
-    loss_hist, accs_hist, best_layers, _ = train(params, ds_train, nb_epochs=epochs, opt_parameters=opt_parameters,
+    loss_hist, accs_hist, best_acc_layers, ttc_hist,layers_mean,enc_mean = train(params, ds_train, nb_epochs=epochs, opt_parameters=opt_parameters,
                                                  layers=layers, dataset_test=ds_test,params_enc=enc_params)
 
     # best training and test at best training
@@ -614,7 +630,7 @@ def build_and_train(params, ds_train, ds_test, epochs=epochs):
                                                                                                   acc_train_at_best_test,
                                                                                                   idx_best_test + 1))  # only from training
 
-    return loss_hist, accs_hist, best_layers
+    return loss_hist, accs_hist, best_acc_layers,layers_mean,enc_mean
 
 
 # In[195]:
@@ -633,9 +649,9 @@ def compute_classification_accuracy(params, dataset, layers=None, early=False,en
         x_local, y_local = x_local.to(device), y_local.to(device)
         if layers == None:
             layers = [w1, w2, v1]
-            output, others, _ = run_snn(x_local, layers)
+            output, others, _,_ = run_snn(x_local, layers)
         else:
-            output, others, _ = run_snn(x_local, enc_params, layers)
+            output, others, _,_ = run_snn(x_local, enc_params, layers)
         # with output spikes
         m = torch.sum(others[-1], 1)  # sum over time
         _, am = torch.max(m, 1)  # argmax over output units
@@ -785,6 +801,7 @@ def load_analog_data():
 
 
 
+
     # Crop to same length
     data_steps = l = np.min([len(d) for d in data])
     data = torch.tensor(np.array([d[:l] for d in data]), dtype=dtype)
@@ -794,6 +811,15 @@ def load_analog_data():
     # nzid = [1, 2, 6, 10]
     # data = data[:, :, nzid]
 
+    file_name = 'data/data_tactile_processes.pkl'
+    with open(file_name, 'wb') as f:
+        ...
+        pickle.dump(data, f)
+
+    file_name = 'data/labels_tactile_processes.pkl'
+    with open(file_name, 'wb') as f:
+        ...
+        pickle.dump(data, f)
 
 
     # Standardize data
@@ -885,12 +911,36 @@ if not use_nni_weights:
     ds_train, ds_test, labels, nb_channels, data_steps = load_analog_data()
     # ds_train, ds_test, labels, nb_channels, data_steps = load_and_extract_augmented(params, file_name, letter_written=letters)
     #
-    loss_hist, acc_hist, best_layers = build_and_train(params, ds_train, ds_test, epochs=epochs)
+    loss_hist, acc_hist, best_layers,layers_mean,enc_mean = build_and_train(params, ds_train, ds_test, epochs=epochs)
 
 # In[ ]:
 
 
 if not use_nni_weights:
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from matplotlib import cm
+    from matplotlib.colors import ListedColormap, LinearSegmentedColormap
+
+    viridis = cm.get_cmap('viridis', len(layers_mean[0]))
+    colors = viridis(np.linspace(0,1,len(layers_mean[0])))
+    titles = ['w1','w2','v1']
+    for i in range(3):
+        plt.figure()
+
+        plt.plot(layers_mean[i])
+        plt.title(titles[i])
+        plt.xlabel('Epochs(#)')
+    titles = ['enc_gain','enc_bias']
+    for i in range(2):
+        plt.figure()
+        plt.plot(enc_mean[i])
+        plt.title(titles[i])
+        plt.xlabel('Epochs(#)')
+    plt.show()
+    plt.figure()
+    plt.plot(range(1, len(acc_hist[0]) + 1),enc_mean)
+    plt.figure()
     plt.plot(range(1, len(acc_hist[0]) + 1), 100 * np.array(acc_hist[0]), color='blue')
     plt.plot(range(1, len(acc_hist[1]) + 1), 100 * np.array(acc_hist[1]), color='orange')
     plt.xlabel("Epoch")
