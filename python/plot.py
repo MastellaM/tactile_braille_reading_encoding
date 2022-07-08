@@ -42,10 +42,38 @@ with open('C:/Users/Startklar/OneDrive/Desktop/INI_burocracy/Viaggi/Telluride/Wo
     Collection1=pickle.load(f)
     f.close()
 
-plt.title('Train & Test accuracy')
+with open('C:/Users/Startklar/OneDrive/Desktop/INI_burocracy/Viaggi/Telluride/Work/tactile_braille_reading_encoding/python/data/collection2.pkl', 'rb') as f:
+    Collection2=pickle.load(f)
+    f.close()
+    
+with open('C:/Users/Startklar/OneDrive/Desktop/INI_burocracy/Viaggi/Telluride/Work/tactile_braille_reading_encoding/python/data/collection3.pkl', 'rb') as f:
+    Collection3=pickle.load(f)
+    f.close()
+    
+with open('C:/Users/Startklar/OneDrive/Desktop/INI_burocracy/Viaggi/Telluride/Work/tactile_braille_reading_encoding/python/data/collection4.pkl', 'rb') as f:
+    Collection4=pickle.load(f)
+    f.close()
+
+with open('C:/Users/Startklar/OneDrive/Desktop/INI_burocracy/Viaggi/Telluride/Work/tactile_braille_reading_encoding/python/data/collection5.pkl', 'rb') as f:
+    Collection5=pickle.load(f)
+    f.close()
+    
+plt.figure()    
+plt.title('Test accuracy')
 plt.plot(np.array(Collection0[0][1]).T, color = 'r')
 plt.plot(np.array(Collection1[0][1]).T, color = 'b')
-plt.plot(np.array(Collection0[0][0]).T, color = 'g')
-plt.plot(np.array(Collection1[0][0]).T, color = 'm')
-plt.legend(['MN Tonic spiking - Test accuracy', 'MN Adaptation - Test accuracy', 'MN Tonic spiking - Train accuracy', 'MN Adaptation - Train accuracy'], loc ="lower right")
+plt.plot(np.array(Collection2[0][1]).T, color = 'k')
+plt.plot(np.array(Collection3[0][1]).T, color = 'g')
+plt.plot(np.array(Collection4[0][1]).T, color = 'm')
+plt.plot(np.array(Collection5[0][1]).T, color = 'violet')
+plt.legend(['Tonic spiking', 'Spike frequency adaptation','Hyperpolarizing spiking','Hyperpolarizing bursting','Tonic bursting', 'Mixed mode'], loc ="lower right")
+plt.figure()
+plt.title('Train accuracy')
+plt.plot(np.array(Collection0[0][0]).T, color = 'r')
+plt.plot(np.array(Collection1[0][0]).T, color = 'b')
+plt.plot(np.array(Collection2[0][0]).T, color = 'k')
+plt.plot(np.array(Collection3[0][0]).T, color = 'g')
+plt.plot(np.array(Collection4[0][0]).T, color = 'm')
+plt.plot(np.array(Collection5[0][0]).T, color = 'violet')
+plt.legend(['Tonic spiking', 'Spike frequency adaptation','Hyperpolarizing spiking','Hyperpolarizing bursting','Tonic bursting', 'Mixed mode'], loc ="lower right")
 plt.show()
