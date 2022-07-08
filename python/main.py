@@ -15,7 +15,7 @@ fig1,axis1 = plt.subplots(nrows = 1,ncols = 1)
 import numpy as np
 import pickle
 collection = []
-for i in range(len(MNparams_dict)):
+for i in range(len(MNparams_dict))[2:]:
     accuracy_list,spk_input = run_neuralnetwork(a = MNparams_dict[i][1],A1=MNparams_dict[i][2],A2 = MNparams_dict[i][3])
     axis1.plot(np.array(accuracy_list).T[:,0],label = MNparams_dict[i][0])
     plt.figure()
