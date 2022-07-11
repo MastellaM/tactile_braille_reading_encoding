@@ -35,7 +35,7 @@ use_nni_weights = False  # set to 'True' for use of weights from NNI optimizatio
 use_seed = False  # set seed to achive reproducable results
 threshold = "enc" # possible values are: 1, 2, 5, 10
 run = "_3"  # run number for statistics
-epochs = 1000  # 300 # set the number of epochs you want to train the network here
+epochs = 300  # 300 # set the number of epochs you want to train the network here
 torch.manual_seed(0)
 # In[183]:
 
@@ -203,8 +203,10 @@ class MN_neuron(nn.Module):
         # self.a = nn.Parameter(torch.tensor(a), requires_grad=True)
         self.a = nn.Parameter(torch.ones(1, N) * a, requires_grad=True)
         # torch.nn.init.constant_(self.a, a)
-        self.A1 = A1 * self.C
-        self.A2 = A2 * self.C
+        #self.A1 = A1 * self.C
+        #self.A2 = A2 * self.C
+        self.A1 = nn.Parameter(torch.ones(1, N) * A1, requires_grad=True)
+        self.A2 = nn.Parameter(torch.ones(1, N) * A2, requires_grad=True)
 
         self.state = None
 
@@ -317,15 +319,15 @@ import matplotlib.pyplot as plt
 # A1 = parameters_MN[1]
 # A2 = parameters_MN[2]
 
-def run_snn(inputs, enc_params, layers, neurons = [],return_encoding_spike = False):
+def run_snn(inputs, enc_params, layers, MN_neuron_params, neurons = [],return_encoding_spike = False):
     bs = inputs.shape[0]
-    mn = neurons['mn']
+    mn = MN_neuron(params['nb_channels']*params['nb_input_copies'], MN_neuron_params[0], MN_neuron_params[1], MN_neuron_params[2])
+    mn.reset()
     enc = torch.zeros((bs, nb_inputs), device=device, dtype=dtype)
     input_spk = torch.zeros((bs, nb_inputs), device=device, dtype=dtype)
     syn = torch.zeros((bs, nb_hidden), device=device, dtype=dtype)
     mem = -1e-3 * torch.ones((bs, nb_hidden), device=device, dtype=dtype)
     out = torch.zeros((bs, nb_hidden), device=device, dtype=dtype)
-    mn.reset()
 
     enc_rec = []
     mem_rec = []
@@ -527,80 +529,81 @@ def build(params):
 # In[192]:
 
 
-def build_and_predict(params, x, use_nni_weights):
-    x = x.to(device)
-
-    global nb_input_copies
-    nb_input_copies = params['nb_input_copies']  # Num of spiking neurons used to encode each channel 
-
-    # Network parameters
-    global nb_inputs
-    nb_inputs = nb_channels * nb_input_copies
-    global nb_hidden
-    nb_hidden = 450
-    global nb_outputs
-    nb_outputs = len(np.unique(labels)) + 1
-    global nb_steps
-    nb_steps = data_steps
-
-    tau_mem = params['tau_mem']  # ms
-    tau_syn = tau_mem / params['tau_ratio']
-
-    global alpha
-    alpha = float(np.exp(-time_step / tau_syn))
-    global beta
-    beta = float(np.exp(-time_step / tau_mem))
-
-    fwd_weight_scale = params['fwd_weight_scale']
-    rec_weight_scale = params['weight_scale_factor'] * fwd_weight_scale
-
-    # Spiking network
-    if use_nni_weights:
-        layers = load_layers('../NNI/SpyTorch_layers/best_test_' + file_type + '_thr_' + str(file_thr) + '_ref_' + str(
-            file_ref) + '_' + optim_nni_experiment + '.pt', map_location=device)
-    else:
-        encoder_weight_scale = 1.0
-        fwd_weight_scale = 3.0
-        rec_weight_scale = 1e-2 * fwd_weight_scale
-
-        # Parameters
-
-        enc_params = []
-        # Encoder
-        enc_gain = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=False)
-        enc_bias = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=False)
-        torch.nn.init.normal_(enc_gain, mean=0.0, std=encoder_weight_scale)  # TODO update this parameter
-        torch.nn.init.normal_(enc_bias, mean=0.0, std=1.0)
-
-        enc_params.append(enc_gain)
-        enc_params.append(enc_bias)
-
-        layers = []
-
-        w1 = torch.empty((nb_inputs, nb_hidden), device=device, dtype=dtype, requires_grad=True)
-        torch.nn.init.normal_(w1, mean=0.0, std=fwd_weight_scale / np.sqrt(nb_inputs))
-        layers.append(w1)
-
-        w2 = torch.empty((nb_hidden, nb_outputs), device=device, dtype=dtype, requires_grad=True)
-        torch.nn.init.normal_(w2, mean=0.0, std=fwd_weight_scale / np.sqrt(nb_hidden))
-        layers.append(w2)
-
-        v1 = torch.empty((nb_hidden, nb_hidden), device=device, dtype=dtype, requires_grad=True)
-        torch.nn.init.normal_(v1, mean=0.0, std=rec_weight_scale / np.sqrt(nb_hidden))
-        layers.append(v1)
-
-    # Make predictions
-    output, _, _ = run_snn(x, enc_params, layers)
-    m = torch.sum(others[-1], 1)  # sum over time
-    _, am = torch.max(m, 1)  # argmax over output units
-
-    return letters[am.detach().cpu().numpy()[0]]
+# def build_and_predict(params, x, use_nni_weights):
+#     x = x.to(device)
+#
+#     global nb_input_copies
+#     nb_input_copies = params['nb_input_copies']  # Num of spiking neurons used to encode each channel
+#
+#     # Network parameters
+#     global nb_inputs
+#     nb_inputs = nb_channels * nb_input_copies
+#     global nb_hidden
+#     nb_hidden = 450
+#     global nb_outputs
+#     nb_outputs = len(np.unique(labels)) + 1
+#     global nb_steps
+#     nb_steps = data_steps
+#
+#     tau_mem = params['tau_mem']  # ms
+#     tau_syn = tau_mem / params['tau_ratio']
+#
+#     global alpha
+#     alpha = float(np.exp(-time_step / tau_syn))
+#     global beta
+#     beta = float(np.exp(-time_step / tau_mem))
+#
+#     fwd_weight_scale = params['fwd_weight_scale']
+#     rec_weight_scale = params['weight_scale_factor'] * fwd_weight_scale
+#
+#     # Spiking network
+#     if use_nni_weights:
+#         layers = load_layers('../NNI/SpyTorch_layers/best_test_' + file_type + '_thr_' + str(file_thr) + '_ref_' + str(
+#             file_ref) + '_' + optim_nni_experiment + '.pt', map_location=device)
+#     else:
+#         encoder_weight_scale = 1.0
+#         fwd_weight_scale = 3.0
+#         rec_weight_scale = 1e-2 * fwd_weight_scale
+#
+#         # Parameters
+#
+#         enc_params = []
+#         # Encoder
+#         enc_gain = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=False)
+#         enc_bias = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=False)
+#         torch.nn.init.normal_(enc_gain, mean=0.0, std=encoder_weight_scale)  # TODO update this parameter
+#         torch.nn.init.normal_(enc_bias, mean=0.0, std=1.0)
+#
+#         enc_params.append(enc_gain)
+#         enc_params.append(enc_bias)
+#
+#         layers = []
+#
+#         w1 = torch.empty((nb_inputs, nb_hidden), device=device, dtype=dtype, requires_grad=True)
+#         torch.nn.init.normal_(w1, mean=0.0, std=fwd_weight_scale / np.sqrt(nb_inputs))
+#         layers.append(w1)
+#
+#         w2 = torch.empty((nb_hidden, nb_outputs), device=device, dtype=dtype, requires_grad=True)
+#         torch.nn.init.normal_(w2, mean=0.0, std=fwd_weight_scale / np.sqrt(nb_hidden))
+#         layers.append(w2)
+#
+#         v1 = torch.empty((nb_hidden, nb_hidden), device=device, dtype=dtype, requires_grad=True)
+#         torch.nn.init.normal_(v1, mean=0.0, std=rec_weight_scale / np.sqrt(nb_hidden))
+#         layers.append(v1)
+#
+#     # Make predictions
+#     output, _, _ = run_snn(x, enc_params, layers)
+#     m = torch.sum(others[-1], 1)  # sum over time
+#     _, am = torch.max(m, 1)  # argmax over output units
+#
+#     return letters[am.detach().cpu().numpy()[0]]
 
 
 # In[193]:
 
 
-def train(params, dataset, lr=0.0015, nb_epochs=300, opt_parameters=None, layers=None, dataset_test=None, params_enc = None, neurons = []):
+def train(params, dataset, lr=0.0015, nb_epochs=300, opt_parameters=None, layers=None, dataset_test=None, params_enc = None,
+          MN_neuron_params=None, neurons = []):
     ttc_hist = []
 
     if (opt_parameters != None) & (layers != None):
@@ -635,7 +638,7 @@ def train(params, dataset, lr=0.0015, nb_epochs=300, opt_parameters=None, layers
         accs = []
         for x_local, y_local in generator:
             x_local, y_local = x_local.to(device), y_local.to(device)
-            output, recs, layers_update,enc_params_update = run_snn(x_local, params_enc,layers, neurons = neurons)
+            output, recs, layers_update,enc_params_update = run_snn(x_local, params_enc,layers,MN_neuron_params, neurons = neurons)
             # print(len(layers_update))
             # print(layers_update[0].shape)
             _, spks, _ = recs
@@ -679,6 +682,7 @@ def train(params, dataset, lr=0.0015, nb_epochs=300, opt_parameters=None, layers
                     params,
                     dataset_test,
                     layers=layers_update,
+                    MN_neuron_params=MN_neuron_params,
                     early=True,
                     enc_params=params_enc,
                     neurons = neurons,
@@ -689,6 +693,7 @@ def train(params, dataset, lr=0.0015, nb_epochs=300, opt_parameters=None, layers
                     params,
                     dataset_test,
                     layers=layers_update,
+                    MN_neuron_params=MN_neuron_params,
                     early=True,
                     enc_params=params_enc,
                     neurons=neurons,
@@ -780,6 +785,20 @@ def build_and_train(params, ds_train, ds_test, epochs=epochs,neurons = []):
     enc_params.append(enc_gain)
     enc_params.append(enc_bias)
 
+    # MN Neuron
+    MN_neuron_params = []
+    a = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=True)
+    torch.nn.init.normal_(a, mean=0.0, std=fwd_weight_scale / np.sqrt(nb_inputs))
+    MN_neuron_params.append(a)
+
+    A1 = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=True)
+    torch.nn.init.normal_(A1, mean=0.0, std=fwd_weight_scale / np.sqrt(nb_inputs))
+    MN_neuron_params.append(A1)
+
+    A2 = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=True)
+    torch.nn.init.normal_(A2, mean=0.0, std=fwd_weight_scale / np.sqrt(nb_inputs))
+    MN_neuron_params.append(A2)
+
     # Spiking network
     layers = []
     w1 = torch.empty((nb_inputs, nb_hidden), device=device, dtype=dtype, requires_grad=True)
@@ -799,10 +818,12 @@ def build_and_train(params, ds_train, ds_test, epochs=epochs,neurons = []):
         layers_init.append(ii.detach().clone())
 
     opt_parameters = [w1, w2, v1,enc_gain,enc_bias]
+    if MN_neuron_params:
+        opt_parameters.extend(MN_neuron_params)
 
     # a fixed learning rate is already defined within the train function, that's why here it is omitted
     loss_hist, accs_hist, best_acc_layers, ttc_hist,layers_mean,enc_mean,spk_input = train(params, ds_train, nb_epochs=epochs, opt_parameters=opt_parameters,
-                                                 layers=layers, dataset_test=ds_test,params_enc=enc_params, neurons = neurons)
+                                                 layers=layers, dataset_test=ds_test,params_enc=enc_params, MN_neuron_params=MN_neuron_params, neurons = neurons)
 
     # best training and test at best training
     acc_best_train = np.max(accs_hist[0])  # returns max value
@@ -830,7 +851,7 @@ def build_and_train(params, ds_train, ds_test, epochs=epochs,neurons = []):
 # In[195]:
 
 
-def compute_classification_accuracy(params, dataset, layers=None, early=False,enc_params = None, neurons = {},myfirsttime = 0):
+def compute_classification_accuracy(params, dataset, layers=None, MN_neuron_params=None, early=False,enc_params = None, neurons = {},myfirsttime = 0):
     """ Computes classification accuracy on supplied data in batches. """
     should_return_spk_input = False
     if myfirsttime == 0:
@@ -847,10 +868,10 @@ def compute_classification_accuracy(params, dataset, layers=None, early=False,en
             output, others, _,_ = run_snn(x_local, layers)
         else:
             if myfirsttime == 0:
-                output, others, _,_,spk_input = run_snn(x_local, enc_params, layers, neurons = neurons,return_encoding_spike = True)
+                output, others, _,_,spk_input = run_snn(x_local, enc_params, layers, MN_neuron_params, neurons = neurons,return_encoding_spike = True)
                 myfirsttime += 1
             else:
-                output, others, _, _ = run_snn(x_local, enc_params, layers, neurons=neurons,
+                output, others, _, _ = run_snn(x_local, enc_params, layers, MN_neuron_params, neurons=neurons,
                                                           return_encoding_spike=False)
 
         # with output spikes
@@ -1178,6 +1199,101 @@ def run_neuralnetwork(a,A1,A2):
         build(params)
 
         test_acc = compute_classification_accuracy(params, ds_test, layers=layers, early=True)
+
+        print("Test accuracy: {}%".format(np.round(test_acc[0] * 100, 2)))
+        print("Test accuracy as it comes, without rounding: {}".format(test_acc[0]))
+
+    # ### Confusion matrix
+
+    # In[ ]:
+
+
+    save = False
+
+    if use_nni_weights:
+        # from SAVED layers (from NNI) corresponding to best test:
+        ConfusionMatrix(params, ds_test, layers=load_layers("weights/SpyTorch_trained_weights_rec_th" + file_thr + ".pt",
+                                                            map_location=device), save=save)
+    else:
+        # from the JUST TRAINED layers corresponding to best test:
+        ConfusionMatrix(params, ds_test, layers=best_layers, save=save)
+
+    # In[ ]:
+
+
+    torch.save(best_layers, "weights/SpyTorch_trained_weights_rec_th" + file_thr + run + ".pt")
+
+# In[ ]:
+
+def run_neuralnetwork_trainMN():
+    n_in = 32*12
+    if not use_nni_weights:
+
+        ds_train, ds_test, labels, nb_channels, data_steps = load_analog_data()
+        # ds_train, ds_test, labels, nb_channels, data_steps = load_and_extract_augmented(params, file_name, letter_written=letters)
+        params['nb_channels'] = nb_channels
+        params['labels'] = labels
+        params['data_steps'] = data_steps
+        loss_hist, acc_hist, best_layers,layers_mean,enc_mean,spk_input = build_and_train(params, ds_train, ds_test, epochs=epochs,neurons =[])
+        return acc_hist,spk_input
+    # In[ ]:
+
+
+    if not use_nni_weights:
+        import numpy as np
+        import matplotlib.pyplot as plt
+        from matplotlib import cm
+        from matplotlib.colors import ListedColormap, LinearSegmentedColormap
+
+        viridis = cm.get_cmap('viridis', len(layers_mean[0]))
+        colors = viridis(np.linspace(0,1,len(layers_mean[0])))
+        titles = ['w1','w2','v1']
+        for i in range(3):
+            plt.figure()
+
+            plt.plot(layers_mean[i])
+            plt.title(titles[i])
+            plt.xlabel('Epochs(#)')
+        titles = ['enc_gain','enc_bias']
+        for i in range(2):
+            plt.figure()
+            plt.plot(enc_mean[i])
+            plt.title(titles[i])
+            plt.xlabel('Epochs(#)')
+        plt.show()
+        plt.figure()
+        plt.plot(range(1, len(acc_hist[0]) + 1),enc_mean)
+        plt.figure()
+        plt.plot(range(1, len(acc_hist[0]) + 1), 100 * np.array(acc_hist[0]), color='blue')
+        plt.plot(range(1, len(acc_hist[1]) + 1), 100 * np.array(acc_hist[1]), color='orange')
+        plt.xlabel("Epoch")
+        plt.ylabel("Accuracy (%)")
+        plt.legend(["Training", "Test"], loc='lower right')
+        plt.show()
+
+    # ### Test the pre-trained network if you already have the pre-trained weights
+
+    # In[ ]:
+
+
+    if use_nni_weights:
+        # saved from NNI:
+        layers = load_layers("weights/SpyTorch_trained_weights_rec_th" + file_thr + run + ".pt", map_location=device)
+
+        print("Input weights matrix: {}x{}".format(len(layers[0]), len(layers[0][0])))
+        print("Hidden weights matrix: {}x{}".format(len(layers[2]), len(layers[2][0])))
+        print("Output weights matrix: {}x{}".format(len(layers[1]), len(layers[1][0])))
+
+    # In[ ]:
+
+
+    if use_nni_weights:
+        ds_train, ds_test, labels, nb_channels, data_steps = load_and_extract_augmented(params, file_name,
+                                                                                        letter_written=letters)
+
+        build(params)
+
+        test_acc = compute_classification_accuracy(params, ds_test, layers=layers,MN_neuron_params=MN_neuron_params, early=True)
 
         print("Test accuracy: {}%".format(np.round(test_acc[0] * 100, 2)))
         print("Test accuracy as it comes, without rounding: {}".format(test_acc[0]))
