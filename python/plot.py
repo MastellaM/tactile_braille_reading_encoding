@@ -14,6 +14,8 @@ import matplotlib.pyplot as plt
 fig1,axis1 = plt.subplots(nrows = 1,ncols = 1)
 import numpy as np
 import pickle
+import torch
+import io
 collection = []
 #for i in range(len(MNparams_dict))[2:]:
    # accuracy_list,spk_input = run_neuralnetwork(a = MNparams_dict[i][1],A1=MNparams_dict[i][2],A2 = MNparams_dict[i][3])
@@ -31,10 +33,20 @@ collection = []
 # plt.legend()
 #plt.show()
 
+class CPU_Unpickler(pickle.Unpickler):
+    def find_class(self, module, name):
+        if module == 'torch.storage' and name == '_load_from_bytes':
+            return lambda b: torch.load(io.BytesIO(b), map_location='cpu')
+        else: return super().find_class(module, name)
+
 def plot_trainedMN():
     with open('data/collection_trainMN.pkl','rb') as f:
-        collection = pickle.load(f)
+        if torch.cuda.is_available():
+            collection = pickle.load(f)
+        else:
+            collection = CPU_Unpickler(f).load()
         f.close()
+
     plt.plot(collection[0][0],label = 'training')
     plt.plot(collection[0][1],label = 'test')
     plt.figure()
