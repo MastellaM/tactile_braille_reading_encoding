@@ -28,74 +28,96 @@ collection = []
        # pickle.dump(local_col, f)
 # with open('data/collection.pkl', 'wb') as f:
 #     pickle.dump(collection, f)
-plt.legend()
+# plt.legend()
 #plt.show()
 
+def plot_trainedMN():
+    with open('data/collection_trainMN.pkl','rb') as f:
+        collection = pickle.load(f)
+        f.close()
+    plt.plot(collection[0][0],label = 'training')
+    plt.plot(collection[0][1],label = 'test')
+    plt.figure()
+    plt.imshow(collection[3][0].detach().cpu().numpy(),label = 'w1')
+    plt.imshow(collection[3][1].detach().cpu().numpy(),label = 'w2')
+    plt.imshow(collection[3][2].detach().cpu().numpy(),label = 'v1')
+    plt.figure()
+    import seaborn as nico_ocd
+    plt.hist(collection[4][0].detach().cpu().numpy(),label = 'a')
+    plt.hist(collection[4][1].detach().cpu().numpy(),label = 'A1')
+    plt.hist(collection[4][2].detach().cpu().numpy(),label = 'A2')
+    plt.legend()
+    plt.xlabel('Neurons')
+    plt.ylabel('Value')
+    plt.show()
 #print(accuracy_list)
 #plt.plot(accuracy_list)
+def plot_fixedMN():
+    with open('C:/Users/Startklar/OneDrive/Desktop/INI_burocracy/Viaggi/Telluride/Work/tactile_braille_reading_encoding/python/data/collection0.pkl', 'rb') as f:
+        Collection0=pickle.load(f)
+        f.close()
 
-with open('C:/Users/Startklar/OneDrive/Desktop/INI_burocracy/Viaggi/Telluride/Work/tactile_braille_reading_encoding/python/data/collection0.pkl', 'rb') as f:
-    Collection0=pickle.load(f)
-    f.close()
+    with open('C:/Users/Startklar/OneDrive/Desktop/INI_burocracy/Viaggi/Telluride/Work/tactile_braille_reading_encoding/python/data/collection1.pkl', 'rb') as f:
+        Collection1=pickle.load(f)
+        f.close()
 
-with open('C:/Users/Startklar/OneDrive/Desktop/INI_burocracy/Viaggi/Telluride/Work/tactile_braille_reading_encoding/python/data/collection1.pkl', 'rb') as f:
-    Collection1=pickle.load(f)
-    f.close()
+    with open('C:/Users/Startklar/OneDrive/Desktop/INI_burocracy/Viaggi/Telluride/Work/tactile_braille_reading_encoding/python/data/collection2.pkl', 'rb') as f:
+        Collection2=pickle.load(f)
+        f.close()
 
-with open('C:/Users/Startklar/OneDrive/Desktop/INI_burocracy/Viaggi/Telluride/Work/tactile_braille_reading_encoding/python/data/collection2.pkl', 'rb') as f:
-    Collection2=pickle.load(f)
-    f.close()
-    
-with open('C:/Users/Startklar/OneDrive/Desktop/INI_burocracy/Viaggi/Telluride/Work/tactile_braille_reading_encoding/python/data/collection3.pkl', 'rb') as f:
-    Collection3=pickle.load(f)
-    f.close()
-    
-with open('C:/Users/Startklar/OneDrive/Desktop/INI_burocracy/Viaggi/Telluride/Work/tactile_braille_reading_encoding/python/data/collection4.pkl', 'rb') as f:
-    Collection4=pickle.load(f)
-    f.close()
+    with open('C:/Users/Startklar/OneDrive/Desktop/INI_burocracy/Viaggi/Telluride/Work/tactile_braille_reading_encoding/python/data/collection3.pkl', 'rb') as f:
+        Collection3=pickle.load(f)
+        f.close()
 
-with open('C:/Users/Startklar/OneDrive/Desktop/INI_burocracy/Viaggi/Telluride/Work/tactile_braille_reading_encoding/python/data/collection5.pkl', 'rb') as f:
-    Collection5=pickle.load(f)
-    f.close()
-    
-with open('C:/Users/Startklar/OneDrive/Desktop/INI_burocracy/Viaggi/Telluride/Work/tactile_braille_reading_encoding/python/data/collection6.pkl', 'rb') as f:
-    Collection6=pickle.load(f)
-    f.close()
-    
-with open('C:/Users/Startklar/OneDrive/Desktop/INI_burocracy/Viaggi/Telluride/Work/tactile_braille_reading_encoding/python/data/collection7.pkl', 'rb') as f:
-    Collection7=pickle.load(f)
-    f.close()
+    with open('C:/Users/Startklar/OneDrive/Desktop/INI_burocracy/Viaggi/Telluride/Work/tactile_braille_reading_encoding/python/data/collection4.pkl', 'rb') as f:
+        Collection4=pickle.load(f)
+        f.close()
 
-with open('C:/Users/Startklar/OneDrive/Desktop/INI_burocracy/Viaggi/Telluride/Work/tactile_braille_reading_encoding/python/data/collection8.pkl', 'rb') as f:
-    Collection8=pickle.load(f)
-    f.close()
-    
-plt.figure()    
-plt.title('Test accuracy')
-plt.plot(np.array(Collection0[0][1]).T, color = 'r')
-plt.plot(np.array(Collection1[0][1]).T, color = 'b')
-plt.plot(np.array(Collection2[0][1]).T, color = 'k')
-plt.plot(np.array(Collection3[0][1]).T, color = 'g')
-plt.plot(np.array(Collection4[0][1]).T, color = 'm')
-plt.plot(np.array(Collection5[0][1]).T, color = 'violet')
-plt.plot(np.array(Collection6[0][1]).T, color = 'steelblue')
-plt.plot(np.array(Collection7[0][1]).T, color = 'yellow')
-plt.plot(np.array(Collection8[0][1]).T, color = 'sienna')
-plt.xlabel('Epochs')
-plt.ylabel('Accuracy')
-plt.legend(['Tonic spiking', 'Spike frequency adaptation','Hyperpolarizing spiking','Hyperpolarizing bursting','Tonic bursting', 'Mixed mode', 'Basal bistability', 'Preferred frequency', 'Spike latency'], loc ="lower right")
-plt.figure()
-plt.title('Train accuracy')
-plt.plot(np.array(Collection0[0][0]).T, color = 'r')
-plt.plot(np.array(Collection1[0][0]).T, color = 'b')
-plt.plot(np.array(Collection2[0][0]).T, color = 'k')
-plt.plot(np.array(Collection3[0][0]).T, color = 'g')
-plt.plot(np.array(Collection4[0][0]).T, color = 'm')
-plt.plot(np.array(Collection5[0][0]).T, color = 'violet')
-plt.plot(np.array(Collection6[0][0]).T, color = 'steelblue')
-plt.plot(np.array(Collection7[0][0]).T, color = 'yellow')
-plt.plot(np.array(Collection8[0][0]).T, color = 'sienna')
-plt.xlabel('Epochs')
-plt.ylabel('Accuracy')
-plt.legend(['Tonic spiking', 'Spike frequency adaptation','Hyperpolarizing spiking','Hyperpolarizing bursting','Tonic bursting', 'Mixed mode', 'Basal bistability', 'Preferred frequency', 'Spike latency'], loc ="lower right")
-plt.show()
+    with open('C:/Users/Startklar/OneDrive/Desktop/INI_burocracy/Viaggi/Telluride/Work/tactile_braille_reading_encoding/python/data/collection5.pkl', 'rb') as f:
+        Collection5=pickle.load(f)
+        f.close()
+
+    with open('C:/Users/Startklar/OneDrive/Desktop/INI_burocracy/Viaggi/Telluride/Work/tactile_braille_reading_encoding/python/data/collection6.pkl', 'rb') as f:
+        Collection6=pickle.load(f)
+        f.close()
+
+    with open('C:/Users/Startklar/OneDrive/Desktop/INI_burocracy/Viaggi/Telluride/Work/tactile_braille_reading_encoding/python/data/collection7.pkl', 'rb') as f:
+        Collection7=pickle.load(f)
+        f.close()
+
+    with open('C:/Users/Startklar/OneDrive/Desktop/INI_burocracy/Viaggi/Telluride/Work/tactile_braille_reading_encoding/python/data/collection8.pkl', 'rb') as f:
+        Collection8=pickle.load(f)
+        f.close()
+
+    plt.figure()
+    plt.title('Test accuracy')
+    plt.plot(np.array(Collection0[0][1]).T, color = 'r')
+    plt.plot(np.array(Collection1[0][1]).T, color = 'b')
+    plt.plot(np.array(Collection2[0][1]).T, color = 'k')
+    plt.plot(np.array(Collection3[0][1]).T, color = 'g')
+    plt.plot(np.array(Collection4[0][1]).T, color = 'm')
+    plt.plot(np.array(Collection5[0][1]).T, color = 'violet')
+    plt.plot(np.array(Collection6[0][1]).T, color = 'steelblue')
+    plt.plot(np.array(Collection7[0][1]).T, color = 'yellow')
+    plt.plot(np.array(Collection8[0][1]).T, color = 'sienna')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy')
+    plt.legend(['Tonic spiking', 'Spike frequency adaptation','Hyperpolarizing spiking','Hyperpolarizing bursting','Tonic bursting', 'Mixed mode', 'Basal bistability', 'Preferred frequency', 'Spike latency'], loc ="lower right")
+    plt.figure()
+    plt.title('Train accuracy')
+    plt.plot(np.array(Collection0[0][0]).T, color = 'r')
+    plt.plot(np.array(Collection1[0][0]).T, color = 'b')
+    plt.plot(np.array(Collection2[0][0]).T, color = 'k')
+    plt.plot(np.array(Collection3[0][0]).T, color = 'g')
+    plt.plot(np.array(Collection4[0][0]).T, color = 'm')
+    plt.plot(np.array(Collection5[0][0]).T, color = 'violet')
+    plt.plot(np.array(Collection6[0][0]).T, color = 'steelblue')
+    plt.plot(np.array(Collection7[0][0]).T, color = 'yellow')
+    plt.plot(np.array(Collection8[0][0]).T, color = 'sienna')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy')
+    plt.legend(['Tonic spiking', 'Spike frequency adaptation','Hyperpolarizing spiking','Hyperpolarizing bursting','Tonic bursting', 'Mixed mode', 'Basal bistability', 'Preferred frequency', 'Spike latency'], loc ="lower right")
+    plt.show()
+
+
+plot_trainedMN()

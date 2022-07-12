@@ -35,7 +35,7 @@ use_nni_weights = False  # set to 'True' for use of weights from NNI optimizatio
 use_seed = False  # set seed to achive reproducable results
 threshold = "enc" # possible values are: 1, 2, 5, 10
 run = "_3"  # run number for statistics
-epochs = 300  # 300 # set the number of epochs you want to train the network here
+epochs = 20  # 300 # set the number of epochs you want to train the network here
 torch.manual_seed(0)
 # In[183]:
 
@@ -177,10 +177,11 @@ class MN_neuron(nn.Module):
 
     def __init__(self, N, a, A1, A2):
         super(MN_neuron, self).__init__()
-
         #self.linear = nn.Linear(n_in, n_out, bias=False)
         #torch.nn.init.eye_(self.linear.weight)
-        self.linear = nn.Parameter(torch.ones(1, N), requires_grad=True)
+        self.linear = nn.Parameter(torch.ones(1, N), requires_grad=True).to(device)
+        # print(self.linear)
+
         # torch.nn.init.constant_(self.linear.weight, 2.0)
         self.C = 1
 
@@ -201,12 +202,14 @@ class MN_neuron(nn.Module):
         self.dt = 1 / 1000
 
         # self.a = nn.Parameter(torch.tensor(a), requires_grad=True)
-        self.a = nn.Parameter(torch.ones(1, N) * a, requires_grad=True)
+        one2N_matrix = torch.ones(1, N,device=device)
+
+        self.a = nn.Parameter(one2N_matrix* a, requires_grad=True)
         # torch.nn.init.constant_(self.a, a)
         #self.A1 = A1 * self.C
         #self.A2 = A2 * self.C
-        self.A1 = nn.Parameter(torch.ones(1, N) * A1, requires_grad=True)
-        self.A2 = nn.Parameter(torch.ones(1, N) * A2, requires_grad=True)
+        self.A1 = nn.Parameter(one2N_matrix * A1, requires_grad=True).to(device)
+        self.A2 = nn.Parameter(one2N_matrix * A2, requires_grad=True).to(device)
 
         self.state = None
 
@@ -242,23 +245,6 @@ class MN_neuron(nn.Module):
         self.state = None
 
 
-class SurrGradSpike(torch.autograd.Function):
-    scale = 20.0  # controls steepness of surrogate gradient
-
-    @staticmethod
-    def forward(ctx, input):
-        ctx.save_for_backward(input)
-        return (input > 0.).float()
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        input, = ctx.saved_tensors
-        grad = grad_output / (SurrGradSpike.scale * torch.abs(input) + 1.0) ** 2
-        return grad
-
-
-activation = SurrGradSpike.apply
-
 # # Training
 # We are gonna train the network to emit 4 and 8 spikes. For that, the loss function is defined as the MSE of the sum of spikes and the objective number of spikes (8 and 4)
 
@@ -278,7 +264,7 @@ from torch.nn import parameter
 #
 # optimizer = torch.optim.SGD(params=Net.parameters(), lr=1e-2)
 # for epoch in range(200):
-#     spikes = 0
+#     spikes = 0MN
 #     voltages = []
 #     for t in range(100):
 #         spikes += Net(Ie)
@@ -321,8 +307,10 @@ import matplotlib.pyplot as plt
 
 def run_snn(inputs, enc_params, layers, MN_neuron_params, neurons = [],return_encoding_spike = False):
     bs = inputs.shape[0]
-    mn = MN_neuron(params['nb_channels']*params['nb_input_copies'], MN_neuron_params[0], MN_neuron_params[1], MN_neuron_params[2])
+    mn = MN_neuron(params['nb_channels']*params['nb_input_copies'], MN_neuron_params[0], MN_neuron_params[1], MN_neuron_params[2]).to(device)
+    # mn = neurons[0]['mn']
     mn.reset()
+
     enc = torch.zeros((bs, nb_inputs), device=device, dtype=dtype)
     input_spk = torch.zeros((bs, nb_inputs), device=device, dtype=dtype)
     syn = torch.zeros((bs, nb_hidden), device=device, dtype=dtype)
@@ -433,6 +421,7 @@ def run_snn(inputs, enc_params, layers, MN_neuron_params, neurons = [],return_en
     other_recs = [mem_rec, spk_rec, s_out_rec]
     layers_update = layers
     enc_params_update = enc_params
+    MNparams_update = MN_neuron_params
     # print(enc_params_update[0].shape)
     # fig = plt.figure(dpi=150, figsize=(7, 3))
     # plot_voltage_traces(enc_rec[:, :, :24], spk_rec[:, :, :24], color="black", alpha=0.2)
@@ -457,9 +446,9 @@ def run_snn(inputs, enc_params, layers, MN_neuron_params, neurons = [],return_en
     # plt.colorbar()
     # plt.show()
     if return_encoding_spike == False:
-        return out_rec, other_recs, layers_update, enc_params_update
+        return out_rec, other_recs, layers_update, enc_params_update,MNparams_update
     else:
-        return out_rec, other_recs, layers_update, enc_params_update,spk_input
+        return out_rec, other_recs, layers_update, enc_params_update,spk_input,MNparams_update
 
 # In[190]:
 
@@ -638,7 +627,8 @@ def train(params, dataset, lr=0.0015, nb_epochs=300, opt_parameters=None, layers
         accs = []
         for x_local, y_local in generator:
             x_local, y_local = x_local.to(device), y_local.to(device)
-            output, recs, layers_update,enc_params_update = run_snn(x_local, params_enc,layers,MN_neuron_params, neurons = neurons)
+            # print(MN_neuron_params)
+            output, recs, layers_update,enc_params_update,MNparams_update = run_snn(x_local, params_enc,layers,MN_neuron_params, neurons = neurons)
             # print(len(layers_update))
             # print(layers_update[0].shape)
             _, spks, _ = recs
@@ -712,8 +702,11 @@ def train(params, dataset, lr=0.0015, nb_epochs=300, opt_parameters=None, layers
             # save best test
             if np.max(test_acc) >= np.max(accs_hist[1]):
                 best_acc_layers = []
+                best_acc_parameters = []
                 for ii in layers_update:
                     best_acc_layers.append(ii.detach().clone())
+                for ii in MNparams_update:
+                    best_acc_parameters.append(ii.detach().clone())
         # print(len(layers_update))
         # print(layers_update[0].shape)
 
@@ -726,7 +719,7 @@ def train(params, dataset, lr=0.0015, nb_epochs=300, opt_parameters=None, layers
             # print(enc_mean)
         update_progress((e+1)/nb_epochs,"Train accuracy: " + str(np.round(accs_hist[0][-1] * 100,2)) +'%. Test accuracy: ' + str(np.round(accs_hist[1][-1] * 100,2)) + '%, Loss: ' + str(np.round(mean_loss,2)))
 
-    return loss_hist, accs_hist, best_acc_layers, ttc_hist,layers_mean,enc_mean,spk_input
+    return loss_hist, accs_hist, best_acc_layers, ttc_hist,layers_mean,enc_mean,spk_input,best_acc_parameters
 
 
 # In[194]:
@@ -784,20 +777,20 @@ def build_and_train(params, ds_train, ds_test, epochs=epochs,neurons = []):
     torch.nn.init.normal_(enc_bias, mean=0.0, std=1.0)
     enc_params.append(enc_gain)
     enc_params.append(enc_bias)
-
     # MN Neuron
     MN_neuron_params = []
-    a = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=True)
+    a = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=True).to(device)
     torch.nn.init.normal_(a, mean=0.0, std=fwd_weight_scale / np.sqrt(nb_inputs))
     MN_neuron_params.append(a)
 
-    A1 = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=True)
+    A1 = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=True).to(device)
     torch.nn.init.normal_(A1, mean=0.0, std=fwd_weight_scale / np.sqrt(nb_inputs))
     MN_neuron_params.append(A1)
 
-    A2 = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=True)
+    A2 = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=True).to(device)
     torch.nn.init.normal_(A2, mean=0.0, std=fwd_weight_scale / np.sqrt(nb_inputs))
     MN_neuron_params.append(A2)
+    # neurons.append({'mn' : MN_neuron(params['nb_channels']*params['nb_input_copies'], a, A1, A2).to(device)})
 
     # Spiking network
     layers = []
@@ -822,7 +815,8 @@ def build_and_train(params, ds_train, ds_test, epochs=epochs,neurons = []):
         opt_parameters.extend(MN_neuron_params)
 
     # a fixed learning rate is already defined within the train function, that's why here it is omitted
-    loss_hist, accs_hist, best_acc_layers, ttc_hist,layers_mean,enc_mean,spk_input = train(params, ds_train, nb_epochs=epochs, opt_parameters=opt_parameters,
+    # print(neurons)
+    loss_hist, accs_hist, best_acc_layers, ttc_hist,layers_mean,enc_mean,spk_input,best_MNparams_update = train(params, ds_train, nb_epochs=epochs, opt_parameters=opt_parameters,
                                                  layers=layers, dataset_test=ds_test,params_enc=enc_params, MN_neuron_params=MN_neuron_params, neurons = neurons)
 
     # best training and test at best training
@@ -845,7 +839,7 @@ def build_and_train(params, ds_train, ds_test, epochs=epochs,neurons = []):
                                                                                                   acc_train_at_best_test,
                                                                                                   idx_best_test + 1))  # only from training
 
-    return loss_hist, accs_hist, best_acc_layers,layers_mean,enc_mean,spk_input
+    return loss_hist, accs_hist, best_acc_layers,layers_mean,enc_mean,spk_input, best_MNparams_update
 
 
 # In[195]:
@@ -865,13 +859,13 @@ def compute_classification_accuracy(params, dataset, layers=None, MN_neuron_para
         x_local, y_local = x_local.to(device), y_local.to(device)
         if layers == None:
             layers = [w1, w2, v1]
-            output, others, _,_ = run_snn(x_local, layers)
+            output, others, _,_, _ = run_snn(x_local, layers)
         else:
             if myfirsttime == 0:
-                output, others, _,_,spk_input = run_snn(x_local, enc_params, layers, MN_neuron_params, neurons = neurons,return_encoding_spike = True)
+                output, others, _,_,spk_input,_ = run_snn(x_local, enc_params, layers, MN_neuron_params, neurons = neurons,return_encoding_spike = True)
                 myfirsttime += 1
             else:
-                output, others, _, _ = run_snn(x_local, enc_params, layers, MN_neuron_params, neurons=neurons,
+                output, others, _, _,_ = run_snn(x_local, enc_params, layers, MN_neuron_params, neurons=neurons,
                                                           return_encoding_spike=False)
 
         # with output spikes
@@ -1066,6 +1060,7 @@ def load_analog_data():
 
     ds_train = TensorDataset(x_train, y_train)
     ds_test = TensorDataset(x_test, y_test)
+
     return ds_train, ds_test, labels, nb_channels, data_steps
 
 
@@ -1122,8 +1117,10 @@ class SurrGradSpike(torch.autograd.Function):
         grad = grad_input / (SurrGradSpike.scale * torch.abs(input) + 1.0) ** 2
         return grad
 
-
+# LIF neuron
 spike_fn = SurrGradSpike.apply
+# MN neuron
+activation = SurrGradSpike.apply
 
 # ### Train and test the network
 
@@ -1132,6 +1129,7 @@ spike_fn = SurrGradSpike.apply
 def run_neuralnetwork(a,A1,A2):
     n_in = 32*12
     if not use_nni_weights:
+        # print(device)
         mn = MN_neuron(n_in, a, A1, A2).to(device)
 
         ds_train, ds_test, labels, nb_channels, data_steps = load_analog_data()
@@ -1139,8 +1137,8 @@ def run_neuralnetwork(a,A1,A2):
         params['nb_channels'] = nb_channels
         params['labels'] = labels
         params['data_steps'] = data_steps
-        loss_hist, acc_hist, best_layers,layers_mean,enc_mean,spk_input = build_and_train(params, ds_train, ds_test, epochs=epochs,neurons = {'mn' : mn})
-        return acc_hist,spk_input
+        loss_hist, acc_hist, best_layers,layers_mean,enc_mean,spk_input,best_MNparams = build_and_train(params, ds_train, ds_test, epochs=epochs,neurons = {'mn' : mn})
+        return acc_hist,spk_input,best_layers,best_MNparams
     # In[ ]:
 
 
@@ -1228,15 +1226,15 @@ def run_neuralnetwork(a,A1,A2):
 def run_neuralnetwork_trainMN():
     n_in = 32*12
     if not use_nni_weights:
-
+        # mn = MN_neuron(n_in, 0, 0, 0).to(device)
         ds_train, ds_test, labels, nb_channels, data_steps = load_analog_data()
         # ds_train, ds_test, labels, nb_channels, data_steps = load_and_extract_augmented(params, file_name, letter_written=letters)
         params['nb_channels'] = nb_channels
         params['labels'] = labels
         params['data_steps'] = data_steps
-        loss_hist, acc_hist, best_layers,layers_mean,enc_mean,spk_input = build_and_train(params, ds_train, ds_test, epochs=epochs,neurons =[])
-        return acc_hist,spk_input
-    # In[ ]:
+
+        loss_hist, acc_hist, best_layers,layers_mean,enc_mean,spk_input,best_MNparams = build_and_train(params, ds_train, ds_test, epochs=epochs)
+        return acc_hist,spk_input,best_layers,best_MNparams    # In[ ]:
 
 
     if not use_nni_weights:
