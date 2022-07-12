@@ -55,12 +55,41 @@ def plot_trainedMN():
     A1_vector = np.zeros([len(params_vector),len(params_vector[0][0])])
     A2_vector = np.zeros([len(params_vector),len(params_vector[0][0])])
     for epix,epoch in enumerate(params_vector):
-        a_vector[epix,:] = epoch[0].detach().cpu().numpy()
-        A1_vector[epix, :] = epoch[1].detach().cpu().numpy()
-        A2_vector[epix, :] = epoch[2].detach().cpu().numpy()
+        a_vector[epix,:] = epoch[0]
+        A1_vector[epix, :] = epoch[1]
+        A2_vector[epix, :] = epoch[2]
     plt.plot(a_vector)
     plt.plot(A1_vector)
     plt.plot(A2_vector)
+
+
+    params_vector = collection[6]
+    w1 = np.zeros([len(params_vector),params_vector[0][0].shape[0],params_vector[0][0].shape[1]])
+    w2 = np.zeros([len(params_vector),params_vector[0][1].shape[0],params_vector[0][1].shape[1]])
+    v1 = np.zeros([len(params_vector),params_vector[0][2].shape[0],params_vector[0][2].shape[1]])
+    for epix,epoch in enumerate(params_vector):
+        w1[epix,:,:] = epoch[0]
+        w2[epix, :,:] = epoch[1]
+        v1[epix, :,:] = epoch[2]
+    w1 = np.reshape(w1,(len(params_vector),params_vector[0][0].shape[0]*params_vector[0][0].shape[1],))
+    w2 = np.reshape(w2,(len(params_vector),params_vector[0][1].shape[0]*params_vector[0][1].shape[1],))
+    v1 = np.reshape(v1,(len(params_vector),params_vector[0][2].shape[0]*params_vector[0][2].shape[1],))
+
+    # plt.figure()
+    # plt.plot(a_vector[:400,:])
+    # plt.figure()
+    # plt.plot(A1_vector[:400,:])
+    # plt.figure()
+    # plt.plot(A2_vector[:400,:])
+
+    aaa = w1[0,:]-w1[-1,:]
+    plt.figure()
+    plt.imshow(w1.T[:40,:],aspect = 'auto')
+    plt.figure()
+    plt.imshow(w2.T[:40,:],aspect = 'auto')
+    plt.figure()
+    plt.imshow(v1.T[:40,:],aspect = 'auto')
+
     plt.show()
 #print(accuracy_list)
 #plt.plot(accuracy_list)
