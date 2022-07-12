@@ -82,13 +82,13 @@ def plot_trainedMN():
     # plt.figure()
     # plt.plot(A2_vector[:400,:])
 
-    aaa = w1[0,:]-w1[-1,:]
+    aaa = w2[0,:]-w2[-1,:]
     plt.figure()
-    plt.imshow(w1.T[:40,:],aspect = 'auto')
+    plt.imshow(w1.T[:2000,:],aspect = 'auto')
     plt.figure()
-    plt.imshow(w2.T[:40,:],aspect = 'auto')
+    plt.imshow(w2.T[:2000,:],aspect = 'auto')
     plt.figure()
-    plt.imshow(v1.T[:40,:],aspect = 'auto')
+    plt.imshow(v1.T[:2000,:],aspect = 'auto')
 
     plt.show()
 #print(accuracy_list)

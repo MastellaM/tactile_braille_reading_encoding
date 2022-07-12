@@ -4,7 +4,7 @@
 # ## Notebook intended to run the working networks for Braille reading
 
 # In[181]:
-
+from parameters.MN_params import MNparams_dict
 from collections import namedtuple
 import os
 import pickle
@@ -24,6 +24,7 @@ import random
 import json
 
 from sklearn.metrics import confusion_matrix
+from parameters.MN_params import INIT_MODE
 
 # ### Don't forget to select the threshold you want to work with and if you want to use pre-trained weights or train from scratch
 
@@ -601,7 +602,7 @@ def train(params, dataset, lr=0.0015, nb_epochs=300, opt_parameters=None, layers
         parameters = opt_parameters  # The paramters we want to optimize
         layers = layers
 
-    optimizer = torch.optim.Adamax(parameters, lr=0.0005, betas=(0.9, 0.995))  # params['lr'] lr=0.0015
+    optimizer = torch.optim.Adamax(parameters, lr=0.005, betas=(0.9, 0.995))  # params['lr'] lr=0.0015
 
     log_softmax_fn = nn.LogSoftmax(dim=1)  # The log softmax function across output units
     loss_fn = nn.NLLLoss()  # The negative log likelihood loss function
@@ -643,12 +644,6 @@ def train(params, dataset, lr=0.0015, nb_epochs=300, opt_parameters=None, layers
             loss_val = loss_fn(log_p_y, y_local) + reg_loss
 
             optimizer.zero_grad()
-            print('Creating graph')
-
-            #dot=make_dot(loss_val, params={'w1': layers_update[0]})
-            #dot.format = 'png'
-            #dot.render(directory='./comp_graph')
-            print('Finished graph')
             loss_val.backward()
             optimizer.step()
             local_loss.append(loss_val.item())
@@ -783,15 +778,15 @@ def build_and_train(params, ds_train, ds_test, epochs=epochs,neurons = []):
     # MN Neuron
     MN_neuron_params = []
     a = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=True).to(device)
-    torch.nn.init.normal_(a, mean=0.0, std=fwd_weight_scale / np.sqrt(nb_inputs))
+    torch.nn.init.normal_(a, mean=MNparams_dict[INIT_MODE][0], std=fwd_weight_scale / np.sqrt(nb_inputs))
     MN_neuron_params.append(a)
 
     A1 = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=True).to(device)
-    torch.nn.init.normal_(A1, mean=0.0, std=fwd_weight_scale / np.sqrt(nb_inputs))
+    torch.nn.init.normal_(A1, mean=MNparams_dict[INIT_MODE][1], std=fwd_weight_scale / np.sqrt(nb_inputs))
     MN_neuron_params.append(A1)
 
     A2 = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=True).to(device)
-    torch.nn.init.normal_(A2, mean=0.0, std=fwd_weight_scale / np.sqrt(nb_inputs))
+    torch.nn.init.normal_(A2, mean=MNparams_dict[INIT_MODE][2], std=fwd_weight_scale / np.sqrt(nb_inputs))
     MN_neuron_params.append(A2)
     # neurons.append({'mn' : MN_neuron(params['nb_channels']*params['nb_input_copies'], a, A1, A2).to(device)})
 
