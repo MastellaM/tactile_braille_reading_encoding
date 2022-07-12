@@ -621,6 +621,8 @@ def train(params, dataset, lr=0.0015, nb_epochs=300, opt_parameters=None, layers
     layers_mean = [[],[],[]]
     enc_mean = [[],[]]
     myfirsttime = 0
+
+    MNparams_update_coll = []
     for e in range(nb_epochs):
         local_loss = []
         # accs: mean training accuracies for each batch
@@ -656,7 +658,7 @@ def train(params, dataset, lr=0.0015, nb_epochs=300, opt_parameters=None, layers
             tmp = np.mean((y_local == am).detach().cpu().numpy())
             accs.append(tmp)
 
-
+        MNparams_update_coll.append(MNparams_update)
 
         mean_loss = np.mean(local_loss)
         loss_hist.append(mean_loss)
@@ -719,7 +721,7 @@ def train(params, dataset, lr=0.0015, nb_epochs=300, opt_parameters=None, layers
             # print(enc_mean)
         update_progress((e+1)/nb_epochs,"Train accuracy: " + str(np.round(accs_hist[0][-1] * 100,2)) +'%. Test accuracy: ' + str(np.round(accs_hist[1][-1] * 100,2)) + '%, Loss: ' + str(np.round(mean_loss,2)))
 
-    return loss_hist, accs_hist, best_acc_layers, ttc_hist,layers_mean,enc_mean,spk_input,best_acc_parameters
+    return loss_hist, accs_hist, best_acc_layers, ttc_hist,layers_mean,enc_mean,spk_input,best_acc_parameters, MNparams_update_coll
 
 
 # In[194]:
@@ -816,7 +818,7 @@ def build_and_train(params, ds_train, ds_test, epochs=epochs,neurons = []):
 
     # a fixed learning rate is already defined within the train function, that's why here it is omitted
     # print(neurons)
-    loss_hist, accs_hist, best_acc_layers, ttc_hist,layers_mean,enc_mean,spk_input,best_MNparams_update = train(params, ds_train, nb_epochs=epochs, opt_parameters=opt_parameters,
+    loss_hist, accs_hist, best_acc_layers, ttc_hist,layers_mean,enc_mean,spk_input,best_MNparams_update,MNparams_coll = train(params, ds_train, nb_epochs=epochs, opt_parameters=opt_parameters,
                                                  layers=layers, dataset_test=ds_test,params_enc=enc_params, MN_neuron_params=MN_neuron_params, neurons = neurons)
 
     # best training and test at best training
@@ -839,7 +841,7 @@ def build_and_train(params, ds_train, ds_test, epochs=epochs,neurons = []):
                                                                                                   acc_train_at_best_test,
                                                                                                   idx_best_test + 1))  # only from training
 
-    return loss_hist, accs_hist, best_acc_layers,layers_mean,enc_mean,spk_input, best_MNparams_update
+    return loss_hist, accs_hist, best_acc_layers,layers_mean,enc_mean,spk_input, best_MNparams_update,MNparams_coll
 
 
 # In[195]:
@@ -1233,8 +1235,8 @@ def run_neuralnetwork_trainMN():
         params['labels'] = labels
         params['data_steps'] = data_steps
 
-        loss_hist, acc_hist, best_layers,layers_mean,enc_mean,spk_input,best_MNparams = build_and_train(params, ds_train, ds_test, epochs=epochs)
-        return acc_hist,spk_input,best_layers,best_MNparams    # In[ ]:
+        loss_hist, acc_hist, best_layers,layers_mean,enc_mean,spk_input,best_MNparams,MNparams_coll = build_and_train(params, ds_train, ds_test, epochs=epochs)
+        return acc_hist,spk_input,best_layers,best_MNparams,MNparams_coll    # In[ ]:
 
 
     if not use_nni_weights:

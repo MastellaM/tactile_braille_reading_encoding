@@ -17,12 +17,12 @@ import pickle
 
 collection = []
 
-accuracy_list,spk_input,best_layers,best_MNparams = run_neuralnetwork_trainMN()
+accuracy_list,spk_input,best_layers,best_MNparams,MNparams_coll = run_neuralnetwork_trainMN()
 axis1.plot(np.array(accuracy_list).T[:,0],label = 'trainMN')
 plt.figure()
 time,idx = np.where(spk_input[0,:,:].cpu().detach().numpy())
 plt.scatter(time,idx)
-local_col = [accuracy_list,time,idx,best_layers,best_MNparams]
+local_col = [accuracy_list,time,idx,best_layers,best_MNparams,MNparams_coll]
 collection.append(local_col)
 where_to_save = 'data/collection_trainMN.pkl'
 with open(where_to_save, 'wb') as f:

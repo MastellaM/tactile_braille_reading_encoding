@@ -49,6 +49,18 @@ def plot_trainedMN():
     plt.legend()
     plt.xlabel('Neurons')
     plt.ylabel('Value')
+    plt.figure()
+    params_vector = collection[5]
+    a_vector = np.zeros([len(params_vector),len(params_vector[0][0])])
+    A1_vector = np.zeros([len(params_vector),len(params_vector[0][0])])
+    A2_vector = np.zeros([len(params_vector),len(params_vector[0][0])])
+    for epix,epoch in enumerate(params_vector):
+        a_vector[epix,:] = epoch[0].detach().cpu().numpy()
+        A1_vector[epix, :] = epoch[1].detach().cpu().numpy()
+        A2_vector[epix, :] = epoch[2].detach().cpu().numpy()
+    plt.plot(a_vector)
+    plt.plot(A1_vector)
+    plt.plot(A2_vector)
     plt.show()
 #print(accuracy_list)
 #plt.plot(accuracy_list)
