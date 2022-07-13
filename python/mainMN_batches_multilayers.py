@@ -1,9 +1,9 @@
 from cProfile import label
 from threading import Thread
 #from MN_neuron import MN_neuron
-from torchvision.datasets import MNIST
-from torchvision.transforms import ToTensor
-from tqdm import tqdm
+# from torchvision.datasets import MNIST
+# from torchvision.transforms import ToTensor
+# from tqdm import tqdm
 import torch
 import matplotlib.pyplot as plt
 import pickle
@@ -46,7 +46,8 @@ class Network(object):
                           'weight_scale_factor': 0.01,
                           'reg_spikes': 0.004,
                           'reg_neurons': 0.000001,
-                          'nb_input_copies': 1}
+                          'nb_input_copies': 4,
+                           'nb_encoding':12}
 
         self.train_params = {}
 
@@ -56,6 +57,12 @@ class Network(object):
         self.generate_dataset()
         self.init_params()
 
+    def plot_spikesplot_spikes(self,who = 'L0'):
+        data = self.spikes_out[who].clone().detach().cpu().numpy()
+        for sample_idx in range(data.shape[0]):
+            t,idx = np.where(data[sample_idx])
+            plt.scatter(t,idx+sample_idx*data.shape[2])
+        plt.title(who)
     def load_analog_data(self):
         # data structure: [trial number] x ['key'] x [time] x [sensor_nr]
         import gzip
@@ -70,8 +77,8 @@ class Network(object):
 
         letter_written = ['Space', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K',
                           'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z']
-        # nb_channels = data_dict[0]['taxel_data'].shape[1]
-        nb_channels = 12  # We did it because Zenke takes 4 sensors
+        nb_channels = data_dict[0]['taxel_data'].shape[1]
+        # nb_channels = 12  # We did it because Zenke takes 4 sensors
         # Extract data
         nb_repetitions = 50
 
@@ -131,19 +138,18 @@ class Network(object):
 
     def generate_dataset(self):
         ds_train, ds_test, labels, nb_channels, data_steps = self.load_analog_data()
-
+        self.parameters['data_step'] = data_steps
         self.generator = DataLoader(ds_train, batch_size=128,
                                     shuffle=False, num_workers=2)
         self.parameters['labels'] = labels
-        self.parameters['data_step'] = data_steps
         self.parameters['nb_channels'] = nb_channels
         self.parameters['nb_inputs'] = nb_channels*self.parameters['nb_input_copies']
         self.parameters['nb_outputs'] = self.parameters['nb_inputs']
     
     def init_params(self):
         self.tau_syn = self.parameters['tau_mem']/self.parameters['tau_ratio']
-        self.alpha = float(np.exp(-self.parameters['time_bin_size'] * 0.001 / self.tau_syn))
-        self.beta = float(np.exp(-self.parameters['time_bin_size'] * 0.001 / self.parameters['tau_mem']))
+        self.parameters['alpha'] = float(np.exp(-self.parameters['time_bin_size'] * 0.001 / self.tau_syn))
+        self.parameters['beta'] = float(np.exp(-self.parameters['time_bin_size'] * 0.001 / self.parameters['tau_mem']))
 
         fwd_weight_scale = self.parameters['fwd_weight_scale']
         rec_weight_scale = self.parameters['weight_scale_factor'] * fwd_weight_scale
@@ -159,17 +165,21 @@ class Network(object):
         torch.nn.init.normal_(enc_bias, mean=0.0, std=1.0)
 
         # MN Neurons
-        a = torch.empty((self.parameters['nb_inputs'],), device=device, dtype=dtype, requires_grad=True).to(device)
+        a = torch.empty((self.parameters['nb_inputs'],), device=device, dtype=dtype).to(device)
         torch.nn.init.normal_(a, mean=MNparams_dict[INIT_MODE][0], std=fwd_weight_scale / np.sqrt(self.parameters['nb_inputs']))
-        self.train_params['a'] = a
+        self.parameters['a'] = a
 
-        A1 = torch.empty((self.parameters['nb_inputs'],), device=device, dtype=dtype, requires_grad=True).to(device)
+        A1 = torch.empty((self.parameters['nb_inputs'],), device=device, dtype=dtype).to(device)
         torch.nn.init.normal_(A1, mean=MNparams_dict[INIT_MODE][1], std=fwd_weight_scale / np.sqrt(self.parameters['nb_inputs']))
-        self.train_params['A1'] = A1
+        self.parameters['A1'] = A1
 
-        A2 = torch.empty((self.parameters['nb_inputs'],), device=device, dtype=dtype, requires_grad=True).to(device)
+        A2 = torch.empty((self.parameters['nb_inputs'],), device=device, dtype=dtype).to(device)
         torch.nn.init.normal_(A2, mean=MNparams_dict[INIT_MODE][2], std=fwd_weight_scale / np.sqrt(self.parameters['nb_inputs']))
-        self.train_params['A2'] = A2
+        self.parameters['A2'] = A2
+
+        w1 = torch.empty((self.parameters['nb_inputs'], self.parameters['nb_outputs']), device=device, dtype=dtype, requires_grad=True)
+        torch.nn.init.normal_(w1, mean=0.0, std=fwd_weight_scale / np.sqrt(self.parameters['nb_encoding']))
+        self.train_params['w1'] = w1
         # neurons.append({'mn' : MN_neuron(params['nb_channels']*params['nb_input_copies'], a, A1, A2).to(device)})
 
         # # Spiking network
@@ -187,52 +197,111 @@ class Network(object):
         # layers.append(v1)
 
     def train(self, nb_epochs=300):
-        self.neurons = {'MN': MN_neuron(self.parameters['nb_inputs'], self.parameters['nb_outputs'],
-                                        a=self.train_params['a'], A1=self.train_params['A1'], A2=self.train_params['A2'])}
+        self.neurons = {}
+        self.neurons['MN'] = MN_neuron(self.parameters['nb_inputs'], self.parameters['nb_inputs'],
+                                        a=self.parameters['a'], A1=self.parameters['A1'], A2=self.parameters['A2']).to(device)
+        self.neurons['LIF'] = LIF_neuron(self.parameters['nb_inputs'], self.parameters['nb_inputs'],alpha = self.parameters['alpha'],beta = self.parameters['beta']).to(device)
+        self.train_params['a'] = self.neurons['MN'].a
+        self.train_params['A1'] = self.neurons['MN'].A1
+        self.train_params['A2'] = self.neurons['MN'].A2
+
+
         torch.nn.init.eye_(self.neurons['MN'].linear.weight)
 
         optimizer = torch.optim.Adamax([self.train_params[param] for param in self.train_params.keys()], lr=0.005, betas=(0.9, 0.995))  # params['lr'] lr=0.0015
 
         log_softmax_fn = nn.LogSoftmax(dim=1)  # The log softmax function across output units
         loss_fn = nn.NLLLoss()  # The negative log likelihood loss function
-
+        self.train_params_history = {'w1':[],'a':[],'A1':[],'A2':[]}
         for e in range(nb_epochs):
+            self.accs_per_batch = []
 
             for x_local, y_local in self.generator:
+                self.neurons['LIF'].initialize_state()
+                self.neurons['MN'].initialize_state()
+
                 x_local, y_local = x_local.to(device), y_local.to(device)
                 self.run_snn(x_local)
-                n_out_spikes = torch.sum(self.spikes_out['L0'], 1) # sum over time stamps
-
+                n_out_spikes = torch.sum(self.spikes_out['L1'], 1) # sum over time stamps
                 log_p_y = log_softmax_fn(n_out_spikes)
                 loss_val = loss_fn(log_p_y, y_local)
 
                 optimizer.zero_grad()
+                # print('a_grad',self.train_params['a'].grad)
                 loss_val.backward()
                 optimizer.step()
                 self.loss_per_epoch.append(loss_val.item())
 
                 # compare to labels
                 _, am = torch.max(n_out_spikes, 1)  # argmax over output units
+                # print('am',am)
                 tmp = np.mean((y_local == am).detach().cpu().numpy())
-                self.accs_per_epoch.append(tmp)
+                # print(tmp)
 
+                for state in self.neurons['MN'].state:
+                    state.detach_()
+                self.accs_per_batch.append(tmp)
+            # print('a_diff', (self.train_params['a'].clone().detach().cpu().numpy() - prev_a).max())
+            # print('A1_diff', (self.train_params['A1'].clone().detach().cpu().numpy() - prev_A1).max())
+            # print('A2_diff', (self.train_params['A2'].clone().detach().cpu().numpy() - prev_A2).max())
+            # print('w1_diff', (self.train_params['w1'].clone().detach().cpu().numpy() - prev_w1).max())
+            self.train_params_history['w1'].append(self.train_params['w1'].clone().detach().cpu().numpy())
+            self.train_params_history['a'].append(self.train_params['a'].clone().detach().cpu().numpy())
+            self.train_params_history['A1'].append(self.train_params['A1'].clone().detach().cpu().numpy())
+            self.train_params_history['A2'].append(self.train_params['A2'].clone().detach().cpu().numpy())
+            # params_learning_save.append(self.train_params)
+            mean_accs = np.mean(self.accs_per_batch)
+            print('epoch',e,'acc(%)', mean_accs * 100)
     def run_snn(self,x_local):
         TOTTIME = self.parameters['data_step']
-        V = torch.zeros(TOTTIME, self.parameters['nb_outputs'], device=device)
-        Th = torch.zeros(TOTTIME, self.parameters['nb_outputs'], device=device)
-        i1 = torch.zeros(TOTTIME, self.parameters['nb_outputs'], device=device)
-        i2 = torch.zeros(TOTTIME, self.parameters['nb_outputs'], device=device)
-        spikes = torch.zeros(TOTTIME, self.parameters['nb_outputs'], device=device)
-
+        bs = x_local.shape[0]
+        encoder_currents = x_local.tile((self.parameters['nb_input_copies'],))
+        V = torch.zeros((bs,x_local.shape[1],encoder_currents.shape[2]), device=device)
+        Th = torch.zeros((bs,x_local.shape[1],encoder_currents.shape[2]), device=device)
+        i1 = torch.zeros((bs,x_local.shape[1],encoder_currents.shape[2]), device=device)
+        i2 = torch.zeros((bs,x_local.shape[1],encoder_currents.shape[2]), device=device)
+        spikes = torch.zeros((bs,x_local.shape[1],encoder_currents.shape[2]), device=device)
+        self.spikes_out = {}
         for t in range(TOTTIME):
-            #print(x_local[t, :])
-            spikes[t] = self.neurons['MN'](x_local[:,t])
-            V[t] = self.neurons['MN'].state.V
-            Th[t] = self.neurons['MN'].state.Thr
-            i1[t] = self.neurons['MN'].state.i1
-            i2[t] = self.neurons['MN'].state.i2
+
+            spikes[:,t,:] = self.neurons['MN'](encoder_currents[:,t,:])
+            V[:,t,:] = self.neurons['MN'].state.V
+            Th[:,t,:] = self.neurons['MN'].state.Thr
+            i1[:,t,:] = self.neurons['MN'].state.i1
+            i2[:,t,:] = self.neurons['MN'].state.i2
         self.spikes_out['L0'] = spikes
 
+        # self.plot_spikes()
+        # plt.show()
+        #
+        h1 = torch.einsum("abc,cd->abd", (spikes, self.train_params['w1']))
+        V = torch.zeros((bs,h1.shape[1],h1.shape[2]), device=device)
+        I = torch.zeros((bs,h1.shape[1],h1.shape[2]), device=device)
+
+        spikes = torch.zeros((bs,h1.shape[1],h1.shape[2]), device=device)
+        for t in range(TOTTIME):
+            spikes[:,t] = self.neurons['LIF'](h1[:,t])
+            V[:,t] = self.neurons['LIF'].state.V
+            I[:,t] = self.neurons['LIF'].state.I
+        self.spikes_out['L1'] = spikes
+
+    def plot_train_params(self):
+        for key in self.train_params_history.keys():
+            for time in range(len(self.train_params_history[key])):
+                plt.plot(self.train_params_history[key][time][:,0])
+            plt.title(key)
+            plt.figure()
+
+    def save_results(self):
+        where_to_save = 'data/params.pkl'
+        with open(where_to_save, 'wb') as f:
+            pickle.dump(self.parameters, f)
+        where_to_save = 'data/params_train.pkl'
+        with open(where_to_save, 'wb') as f:
+            pickle.dump(self.train_params, f)
+        where_to_save = 'data/params_train_history.pkl'
+        with open(where_to_save, 'wb') as f:
+            pickle.dump(self.train_params_history, f)
 class MN_neuron(nn.Module):
     NeuronState = namedtuple('NeuronState', ['V', 'i1', 'i2', 'Thr'])
 
@@ -251,14 +320,15 @@ class MN_neuron(nn.Module):
         self.k1 = 200  # units of 1/s
         self.k2 = 20  # units of 1/s
         self.dt = 1 / 1000
-        self.a = nn.Parameter(torch.ones(n_out) * a, requires_grad=True)
+        self.a = nn.Parameter(torch.ones(n_out).to(device) * a, requires_grad=True).to(device)
         #self.A1 = A1 * self.C
         #self.A2 = A2 * self.C
-        self.A1 = nn.Parameter(torch.ones(n_out) * A1, requires_grad=True)
-        self.A2 = nn.Parameter(torch.ones(n_out) * A2, requires_grad=True)
+        self.A1 = nn.Parameter(torch.ones(n_out).to(device) * A1, requires_grad=True).to(device)
+        self.A2 = nn.Parameter(torch.ones(n_out).to(device) * A2, requires_grad=True).to(device)
         self.state = None
         self.n_out = n_out
-
+    def initialize_state(self):
+        self.state = None
     def forward(self, x):
         if self.state is None:
             self.state = self.NeuronState(V=torch.ones(x.shape[0], self.n_out, device=x.device) * self.EL,
@@ -266,6 +336,8 @@ class MN_neuron(nn.Module):
                                           i2=torch.zeros(x.shape[0], self.n_out, device=x.device),
                                           Thr=torch.ones(x.shape[0], self.n_out, device=x.device) * self.Tr, )
 
+        # print('V_shape',self.state.V.shape)
+        # print('x_shape',x.shape)
         V = self.state.V
         i1 = self.state.i1
         i2 = self.state.i2
@@ -286,6 +358,44 @@ class MN_neuron(nn.Module):
         self.state = self.NeuronState(V=V, i1=i1, i2=i2, Thr=Thr)
 
         return spk
+
+class LIF_neuron(nn.Module):
+    NeuronState = namedtuple('NeuronState', ['V', 'I'])
+
+    def __init__(self, n_in, n_out,alpha,beta):
+        super(LIF_neuron, self).__init__()
+        self.linear = nn.Linear(n_in, n_out, bias=False)
+        self.C = 1
+        self.thr = 1
+        self.state = None
+        self.n_out = n_out
+        self.alpha = alpha
+        self.beta = beta
+        self.dt = 1 / 1000
+        self.Vr = 0
+    def initialize_state(self):
+        self.state = None
+    def forward(self, x):
+        if self.state is None:
+            self.state = self.NeuronState(V=torch.ones(x.shape[0], self.n_out, device=x.device),
+                                          I=torch.zeros(x.shape[0], self.n_out, device=x.device),
+                                          )
+
+        V = self.state.V
+        I = self.state.I
+        I = self.alpha * I + self.linear(x)
+
+        V += self.dt * (I - self.beta * (V)) / self.C
+
+        spk = activation(V - self.thr)
+
+        V = (1 - spk) * V + (spk) * self.Vr
+
+        self.state = self.NeuronState(V=V, I = I)
+
+        return spk
+
+
 
 class SurrGradSpike(torch.autograd.Function):
     """
@@ -327,3 +437,5 @@ activation = SurrGradSpike.apply
 
 nico = Network()
 nico.train()
+nico.save_results()
+nico.plot_train_params()

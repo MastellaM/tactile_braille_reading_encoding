@@ -75,9 +75,12 @@ def plot_trainedMN():
     plt.plot(a_vector)
     plt.plot(A1_vector)
     plt.plot(A2_vector)
-    aaa = a_vector[0, :] - a_vector[-1, :]
-    print('a_diff',aaa.max())
+    differenza_tra_i_vettori_a_in_tempo_0_e_a_in_temp_meno1 = a_vector[0, :] - a_vector[-1, :]
+    print('a_diff',differenza_tra_i_vettori_a_in_tempo_0_e_a_in_temp_meno1.max())
     aaa = A2_vector[0,:]-A2_vector[-1,:]
+    print('A2_diff',aaa.max())
+    aaa = A1_vector[0,:] - A1_vector[-1,:]
+    print('A1_diff', aaa.max())
 
     params_vector = collection[6]
     w1 = np.zeros([len(params_vector),params_vector[0][0].shape[0],params_vector[0][0].shape[1]])
@@ -110,23 +113,22 @@ def plot_trainedMN():
     plt.show()
     return collection
 
-collection = plot_trainedMN()
 
 # Plot
-mn_params = collection[5]
-n_epochs = len(mn_params)
-n_params = len(mn_params[0])
-params_list = ['a','A1','A2']
-dict_data = {'epochs':[],'value':[],'params':[]}
-for epoch in range(n_epochs):
-    for param in range(n_params):
-        data = np.array(mn_params[epoch][param].detach())
-        dict_data['epochs'].extend([epoch]*len(data))
-        dict_data['params'].extend([params_list[param]]*len(data))
-        dict_data['value'].extend(data)
-
-sns.lineplot(data=pd.DataFrame(dict_data), x='epochs', y='value', hue='params')
-plt.show()
+# mn_params = collection[5]
+# n_epochs = len(mn_params)
+# n_params = len(mn_params[0])
+# params_list = ['a','A1','A2']
+# dict_data = {'epochs':[],'value':[],'params':[]}
+# for epoch in range(n_epochs):
+#     for param in range(n_params):
+#         data = np.array(mn_params[epoch][param].detach())
+#         dict_data['epochs'].extend([epoch]*len(data))
+#         dict_data['params'].extend([params_list[param]]*len(data))
+#         dict_data['value'].extend(data)
+#
+# sns.lineplot(data=pd.DataFrame(dict_data), x='epochs', y='value', hue='params')
+# plt.show()
 
 #print(accuracy_list)
 #plt.plot(accuracy_list)
@@ -197,3 +199,33 @@ def plot_fixedMN():
     plt.legend(['Tonic spiking', 'Spike frequency adaptation','Hyperpolarizing spiking','Hyperpolarizing bursting','Tonic bursting', 'Mixed mode', 'Basal bistability', 'Preferred frequency', 'Spike latency'], loc ="lower right")
     plt.show()
 
+def collect_and_plot(who,collection):
+    print('len shape',len(collection[who][0].shape))
+    if len(collection[who][0].shape) == 1:
+        data = np.zeros([len(collection[who]), collection[who][0].shape[0]])
+        for epix, epoch_data in enumerate(collection[who]):
+            data[epix, :] = epoch_data
+        plt.plot(data[:, :])
+    elif len(collection[who][0].shape) == 2:
+        data = np.zeros([len(collection[who]), collection[who][0].shape[0], collection[who][0].shape[1]])
+        for epix, epoch_data in enumerate(collection[who]):
+            data[epix, :,:] = epoch_data
+        plt.plot(data[:, :,0])
+    plt.title(who)
+def plot_mainMN_multilayers():
+    where_to_save = 'data/params_train_history.pkl'
+    with open(where_to_save, 'rb') as f:
+        collection = pickle.load(f)
+    collect_and_plot('a',collection)
+    plt.figure()
+    collect_and_plot('A1',collection)
+    plt.figure()
+    collect_and_plot('A2',collection)
+    plt.figure()
+    collect_and_plot('w1',collection)
+
+    plt.show()
+    print('ciao')
+
+
+plot_mainMN_multilayers()
