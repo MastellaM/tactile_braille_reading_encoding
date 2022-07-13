@@ -57,6 +57,7 @@ class Network(object):
 
         self.generate_dataset()
         self.init_params()
+        self.spikes_out = {}
 
     def load_analog_data(self):
         # data structure: [trial number] x ['key'] x [time] x [sensor_nr]
@@ -134,10 +135,11 @@ class Network(object):
     def generate_dataset(self):
         ds_train, ds_test, labels, nb_channels, data_steps = self.load_analog_data()
 
-        self.generator = DataLoader(ds_train, batch_size=128,
+        self.generator = DataLoader(ds_train, batch_size=int(data_steps),
                                     shuffle=False, num_workers=2)
         self.parameters['labels'] = labels
         self.parameters['data_step'] = data_steps
+        print('Data steps', data_steps)
         self.parameters['nb_channels'] = nb_channels
         self.parameters['nb_inputs'] = nb_channels * self.parameters['nb_input_copies']
         self.parameters['nb_outputs'] = self.parameters['nb_inputs']
@@ -195,7 +197,6 @@ class Network(object):
         self.neurons = {'MN': MN_neuron(self.parameters['nb_inputs'], self.parameters['nb_outputs'],
                                         a=self.train_params['a'], A1=self.train_params['A1'],
                                         A2=self.train_params['A2'])}
-        torch.nn.init.eye_(self.neurons['MN'].linear.weight)
 
         optimizer = torch.optim.Adamax([self.train_params[param] for param in self.train_params.keys()], lr=0.005,
                                        betas=(0.9, 0.995))  # params['lr'] lr=0.0015
@@ -207,10 +208,15 @@ class Network(object):
 
             for x_local, y_local in self.generator:
                 x_local, y_local = x_local.to(device), y_local.to(device)
+                print('Epoch e', e)
                 self.run_snn(x_local)
                 n_out_spikes = torch.sum(self.spikes_out['L0'], 1)  # sum over time stamps
 
                 log_p_y = log_softmax_fn(n_out_spikes)
+                print('shape n spikes', n_out_spikes.shape)
+                print('shape log py', log_p_y.shape)
+                print('shape y local', y_local.shape)
+                print('shape x local', x_local.shape)
                 loss_val = loss_fn(log_p_y, y_local)
 
                 optimizer.zero_grad()
@@ -225,14 +231,14 @@ class Network(object):
 
     def run_snn(self, x_local):
         TOTTIME = self.parameters['data_step']
-        V = torch.zeros(TOTTIME, self.parameters['nb_outputs'], device=device)
-        Th = torch.zeros(TOTTIME, self.parameters['nb_outputs'], device=device)
-        i1 = torch.zeros(TOTTIME, self.parameters['nb_outputs'], device=device)
-        i2 = torch.zeros(TOTTIME, self.parameters['nb_outputs'], device=device)
-        spikes = torch.zeros(TOTTIME, self.parameters['nb_outputs'], device=device)
+        V = torch.zeros(x_local.shape[1],x_local.shape[0], self.parameters['nb_outputs'], device=device)
+        Th = torch.zeros(x_local.shape[1],x_local.shape[0], self.parameters['nb_outputs'], device=device)
+        i1 = torch.zeros(x_local.shape[1],x_local.shape[0], self.parameters['nb_outputs'], device=device)
+        i2 = torch.zeros(x_local.shape[1],x_local.shape[0], self.parameters['nb_outputs'], device=device)
+        spikes = torch.zeros(x_local.shape[1],x_local.shape[0], self.parameters['nb_outputs'], device=device)
 
         for t in range(TOTTIME):
-            # print(x_local[t, :])
+            print(x_local[t, :])
             spikes[t] = self.neurons['MN'](x_local[:, t])
             V[t] = self.neurons['MN'].state.V
             Th[t] = self.neurons['MN'].state.Thr
@@ -268,6 +274,7 @@ class MN_neuron(nn.Module):
         self.n_out = n_out
 
     def forward(self, x):
+        print('Forward MN')
         if self.state is None:
             self.state = self.NeuronState(V=torch.ones(x.shape[0], self.n_out, device=x.device) * self.EL,
                                           i1=torch.zeros(x.shape[0], self.n_out, device=x.device),
