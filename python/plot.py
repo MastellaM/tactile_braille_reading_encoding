@@ -61,7 +61,9 @@ def plot_trainedMN():
     plt.plot(a_vector)
     plt.plot(A1_vector)
     plt.plot(A2_vector)
-
+    aaa = a_vector[0, :] - a_vector[-1, :]
+    print('a_diff',aaa.max())
+    aaa = A2_vector[0,:]-A2_vector[-1,:]
 
     params_vector = collection[6]
     w1 = np.zeros([len(params_vector),params_vector[0][0].shape[0],params_vector[0][0].shape[1]])
@@ -74,7 +76,8 @@ def plot_trainedMN():
     w1 = np.reshape(w1,(len(params_vector),params_vector[0][0].shape[0]*params_vector[0][0].shape[1],))
     w2 = np.reshape(w2,(len(params_vector),params_vector[0][1].shape[0]*params_vector[0][1].shape[1],))
     v1 = np.reshape(v1,(len(params_vector),params_vector[0][2].shape[0]*params_vector[0][2].shape[1],))
-
+    aaa = w1[0, :] - w1[-1, :]
+    print('ciao')
     # plt.figure()
     # plt.plot(a_vector[:400,:])
     # plt.figure()
@@ -82,7 +85,7 @@ def plot_trainedMN():
     # plt.figure()
     # plt.plot(A2_vector[:400,:])
 
-    aaa = w2[0,:]-w2[-1,:]
+
     plt.figure()
     plt.imshow(w1.T[:2000,:],aspect = 'auto')
     plt.figure()

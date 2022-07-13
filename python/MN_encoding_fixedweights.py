@@ -37,7 +37,7 @@ use_nni_weights = False  # set to 'True' for use of weights from NNI optimizatio
 use_seed = False  # set seed to achive reproducable results
 threshold = "enc" # possible values are: 1, 2, 5, 10
 run = "_3"  # run number for statistics
-epochs = 30  # 300 # set the number of epochs you want to train the network here
+epochs = 300  # 300 # set the number of epochs you want to train the network here
 torch.manual_seed(0)
 # In[183]:
 
@@ -210,8 +210,8 @@ class MN_neuron(nn.Module):
         # torch.nn.init.constant_(self.a, a)
         #self.A1 = A1 * self.C
         #self.A2 = A2 * self.C
-        self.A1 = nn.Parameter(one2N_matrix * A1, requires_grad=True)
-        self.A2 = nn.Parameter(one2N_matrix * A2, requires_grad=True)
+        self.A1 = nn.Parameter(one2N_matrix * A1, requires_grad=True).to(device)
+        self.A2 = nn.Parameter(one2N_matrix * A2, requires_grad=True).to(device)
 
         self.state = None
 
@@ -309,7 +309,8 @@ import matplotlib.pyplot as plt
 
 def run_snn(inputs, enc_params, layers, MN_neuron_params, neurons = [],return_encoding_spike = False):
     bs = inputs.shape[0]
-    mn = neurons['mn']
+    mn = MN_neuron(params['nb_channels']*params['nb_input_copies'], MN_neuron_params[0], MN_neuron_params[1], MN_neuron_params[2]).to(device)
+    # mn = neurons[0]['mn']
     mn.reset()
 
     enc = torch.zeros((bs, nb_inputs), device=device, dtype=dtype)
@@ -424,7 +425,7 @@ def run_snn(inputs, enc_params, layers, MN_neuron_params, neurons = [],return_en
     layers_update = layers
     enc_params_update = enc_params
     MNparams_update = MN_neuron_params
-    # print(MNparams_update)
+    print(MNparams_update)
     # print(enc_params_update[0].shape)
     # fig = plt.figure(dpi=150, figsize=(7, 3))
     # plot_voltage_traces(enc_rec[:, :, :24], spk_rec[:, :, :24], color="black", alpha=0.2)
@@ -598,15 +599,11 @@ def train(params, dataset, lr=0.0015, nb_epochs=300, opt_parameters=None, layers
           MN_neuron_params=None, neurons = []):
     ttc_hist = []
 
-    # if (opt_parameters != None) & (layers != None):
-    #     parameters = opt_parameters  # The paramters we want to optimize
-    #     layers = layers
-    parameters = opt_parameters
-    neurons = {'mn': MN_neuron(params['nb_channels']*params['nb_input_copies'], MN_neuron_params[0], MN_neuron_params[1], MN_neuron_params[2]).to(device)}
+    if (opt_parameters != None) & (layers != None):
+        parameters = opt_parameters  # The paramters we want to optimize
+        layers = layers
 
-    # if MN_neuron_params:
-    opt_parameters.extend([neurons['mn'].a,neurons['mn'].A1,neurons['mn'].A2])
-    optimizer = torch.optim.SGD(opt_parameters, lr=1e-2)  # params['lr'] lr=0.0015
+    optimizer = torch.optim.Adamax(parameters, lr=0.005, betas=(0.9, 0.995))  # params['lr'] lr=0.0015
 
     log_softmax_fn = nn.LogSoftmax(dim=1)  # The log softmax function across output units
     loss_fn = nn.NLLLoss()  # The negative log likelihood loss function
@@ -630,7 +627,6 @@ def train(params, dataset, lr=0.0015, nb_epochs=300, opt_parameters=None, layers
             x_local, y_local = x_local.to(device), y_local.to(device)
             # print(MN_neuron_params)
             output, recs, layers_update,enc_params_update,MNparams_update = run_snn(x_local, params_enc,layers,MN_neuron_params, neurons = neurons)
-            # print(output)
             # print(len(layers_update))
             # print(layers_update[0].shape)
             _, spks, _ = recs
@@ -657,7 +653,7 @@ def train(params, dataset, lr=0.0015, nb_epochs=300, opt_parameters=None, layers
             _, am = torch.max(m, 1)  # argmax over output units
             tmp = np.mean((y_local == am).detach().cpu().numpy())
             accs.append(tmp)
-        # print(MNparams_update)
+
         MNparams_update_coll.append([m.clone().detach().cpu().numpy() for m in MNparams_update])
         layers_update_coll.append([l.clone().detach().cpu().numpy() for l in layers_update])
         # print(layers_update)
@@ -774,23 +770,23 @@ def build_and_train(params, ds_train, ds_test, epochs=epochs,neurons = []):
 
     enc_params = []
     # Encoder
-    enc_gain = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=False)
-    enc_bias = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=False)
+    enc_gain = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=True)
+    enc_bias = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=True)
     torch.nn.init.normal_(enc_gain, mean=0.0, std=encoder_weight_scale)  # TODO update this parameter
     torch.nn.init.normal_(enc_bias, mean=0.0, std=1.0)
     enc_params.append(enc_gain)
     enc_params.append(enc_bias)
     # MN Neuron
     MN_neuron_params = []
-    a = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=False)
+    a = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=True).to(device)
     torch.nn.init.normal_(a, mean=MNparams_dict[INIT_MODE][0], std=fwd_weight_scale / np.sqrt(nb_inputs))
     MN_neuron_params.append(a)
 
-    A1 = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=False)
+    A1 = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=True).to(device)
     torch.nn.init.normal_(A1, mean=MNparams_dict[INIT_MODE][1], std=fwd_weight_scale / np.sqrt(nb_inputs))
     MN_neuron_params.append(A1)
 
-    A2 = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=True)
+    A2 = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=True).to(device)
     torch.nn.init.normal_(A2, mean=MNparams_dict[INIT_MODE][2], std=fwd_weight_scale / np.sqrt(nb_inputs))
     MN_neuron_params.append(A2)
     # neurons.append({'mn' : MN_neuron(params['nb_channels']*params['nb_input_copies'], a, A1, A2).to(device)})
@@ -813,10 +809,9 @@ def build_and_train(params, ds_train, ds_test, epochs=epochs,neurons = []):
     for ii in layers:
         layers_init.append(ii.detach().clone())
 
-    opt_parameters = [w1,w2,v1]
-    # opt_parameters = []
-    # if MN_neuron_params:
-    #     opt_parameters.extend(MN_neuron_params)
+    opt_parameters = [w1, w2, v1,enc_gain,enc_bias]
+    if MN_neuron_params:
+        opt_parameters.extend(MN_neuron_params)
 
     # a fixed learning rate is already defined within the train function, that's why here it is omitted
     # print(neurons)
