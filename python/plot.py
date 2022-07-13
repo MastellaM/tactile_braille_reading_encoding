@@ -14,6 +14,10 @@ import matplotlib.pyplot as plt
 fig1,axis1 = plt.subplots(nrows = 1,ncols = 1)
 import numpy as np
 import pickle
+import torch
+import io
+import pandas as pd
+import seaborn as sns
 collection = []
 #for i in range(len(MNparams_dict))[2:]:
    # accuracy_list,spk_input = run_neuralnetwork(a = MNparams_dict[i][1],A1=MNparams_dict[i][2],A2 = MNparams_dict[i][3])
@@ -31,10 +35,20 @@ collection = []
 # plt.legend()
 #plt.show()
 
+class CPU_Unpickler(pickle.Unpickler):
+    def find_class(self, module, name):
+        if module == 'torch.storage' and name == '_load_from_bytes':
+            return lambda b: torch.load(io.BytesIO(b), map_location='cpu')
+        else: return super().find_class(module, name)
+
 def plot_trainedMN():
     with open('data/collection_trainMN.pkl','rb') as f:
-        collection = pickle.load(f)
+        if torch.cuda.is_available():
+            collection = pickle.load(f)
+        else:
+            collection = CPU_Unpickler(f).load()
         f.close()
+
     plt.plot(collection[0][0],label = 'training')
     plt.plot(collection[0][1],label = 'test')
     plt.figure()
@@ -94,6 +108,26 @@ def plot_trainedMN():
     plt.imshow(v1.T[:2000,:],aspect = 'auto')
 
     plt.show()
+    return collection
+
+collection = plot_trainedMN()
+
+# Plot
+mn_params = collection[5]
+n_epochs = len(mn_params)
+n_params = len(mn_params[0])
+params_list = ['a','A1','A2']
+dict_data = {'epochs':[],'value':[],'params':[]}
+for epoch in range(n_epochs):
+    for param in range(n_params):
+        data = np.array(mn_params[epoch][param].detach())
+        dict_data['epochs'].extend([epoch]*len(data))
+        dict_data['params'].extend([params_list[param]]*len(data))
+        dict_data['value'].extend(data)
+
+sns.lineplot(data=pd.DataFrame(dict_data), x='epochs', y='value', hue='params')
+plt.show()
+
 #print(accuracy_list)
 #plt.plot(accuracy_list)
 def plot_fixedMN():
@@ -163,5 +197,3 @@ def plot_fixedMN():
     plt.legend(['Tonic spiking', 'Spike frequency adaptation','Hyperpolarizing spiking','Hyperpolarizing bursting','Tonic bursting', 'Mixed mode', 'Basal bistability', 'Preferred frequency', 'Spike latency'], loc ="lower right")
     plt.show()
 
-
-plot_trainedMN()
