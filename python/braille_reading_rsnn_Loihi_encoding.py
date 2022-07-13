@@ -4,7 +4,7 @@
 # ## Notebook intended to run the working networks for Braille reading
 
 # In[181]:
-
+from parameters.MN_params import MNparams_dict
 from collections import namedtuple
 import os
 import pickle
@@ -18,11 +18,13 @@ import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
 from sklearn.model_selection import train_test_split
+from torchviz import make_dot
 
 import random
 import json
 
 from sklearn.metrics import confusion_matrix
+from parameters.MN_params import INIT_MODE
 
 # ### Don't forget to select the threshold you want to work with and if you want to use pre-trained weights or train from scratch
 
@@ -339,7 +341,8 @@ def run_snn(inputs, enc_params, layers, MN_neuron_params, neurons = [],return_en
 
         # Compute hidden layer activity
         #h1 = encoder_currents[:, t].mm(layers[0]) + torch.einsum("ab,bc->ac", (out, layers[2]))
-        h1 = input_spk.mm(layers[0]) + torch.einsum("ab,bc->ac", (out, layers[2]))
+        #h1 = input_spk.mm(layers[0]) + torch.einsum("ab,bc->ac", (out, layers[2]))
+        h1 = torch.einsum("ab,bc->ac", (input_spk, layers[0])) + torch.einsum("ab,bc->ac", (out, layers[2]))
         # enc = new_enc
         # Up to here is what i pasted from zenke, dear lyes
 
@@ -598,17 +601,8 @@ def train(params, dataset, lr=0.0015, nb_epochs=300, opt_parameters=None, layers
     if (opt_parameters != None) & (layers != None):
         parameters = opt_parameters  # The paramters we want to optimize
         layers = layers
-    elif (opt_parameters != None) & (layers == None):
-        parameters = opt_parameters
-        layers = [w1, w2, v1]
-    elif (opt_parameters == None) & (layers != None):
-        parameters = [w1, w2, v1]
-        layers = layers
-    elif (opt_parameters == None) & (layers == None):  # default from tutorial 5
-        parameters = [w1, w2, v1]
-        layers = [w1, w2, v1]
 
-    optimizer = torch.optim.Adamax(parameters, lr=0.0005, betas=(0.9, 0.995))  # params['lr'] lr=0.0015
+    optimizer = torch.optim.Adamax(parameters, lr=0.005, betas=(0.9, 0.995))  # params['lr'] lr=0.0015
 
     log_softmax_fn = nn.LogSoftmax(dim=1)  # The log softmax function across output units
     loss_fn = nn.NLLLoss()  # The negative log likelihood loss function
@@ -623,6 +617,7 @@ def train(params, dataset, lr=0.0015, nb_epochs=300, opt_parameters=None, layers
     myfirsttime = 0
 
     MNparams_update_coll = []
+    layers_update_coll = []
     for e in range(nb_epochs):
         local_loss = []
         # accs: mean training accuracies for each batch
@@ -658,8 +653,9 @@ def train(params, dataset, lr=0.0015, nb_epochs=300, opt_parameters=None, layers
             tmp = np.mean((y_local == am).detach().cpu().numpy())
             accs.append(tmp)
 
-        MNparams_update_coll.append(MNparams_update)
-
+        MNparams_update_coll.append([m.clone().detach().cpu().numpy() for m in MNparams_update])
+        layers_update_coll.append([l.clone().detach().cpu().numpy() for l in layers_update])
+        print(layers_update)
         mean_loss = np.mean(local_loss)
         loss_hist.append(mean_loss)
 
@@ -721,7 +717,7 @@ def train(params, dataset, lr=0.0015, nb_epochs=300, opt_parameters=None, layers
             # print(enc_mean)
         update_progress((e+1)/nb_epochs,"Train accuracy: " + str(np.round(accs_hist[0][-1] * 100,2)) +'%. Test accuracy: ' + str(np.round(accs_hist[1][-1] * 100,2)) + '%, Loss: ' + str(np.round(mean_loss,2)))
 
-    return loss_hist, accs_hist, best_acc_layers, ttc_hist,layers_mean,enc_mean,spk_input,best_acc_parameters, MNparams_update_coll
+    return loss_hist, accs_hist, best_acc_layers, ttc_hist,layers_mean,enc_mean,spk_input,best_acc_parameters, MNparams_update_coll, layers_update_coll
 
 
 # In[194]:
@@ -782,15 +778,15 @@ def build_and_train(params, ds_train, ds_test, epochs=epochs,neurons = []):
     # MN Neuron
     MN_neuron_params = []
     a = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=True).to(device)
-    torch.nn.init.normal_(a, mean=0.0, std=fwd_weight_scale / np.sqrt(nb_inputs))
+    torch.nn.init.normal_(a, mean=MNparams_dict[INIT_MODE][0], std=fwd_weight_scale / np.sqrt(nb_inputs))
     MN_neuron_params.append(a)
 
     A1 = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=True).to(device)
-    torch.nn.init.normal_(A1, mean=0.0, std=fwd_weight_scale / np.sqrt(nb_inputs))
+    torch.nn.init.normal_(A1, mean=MNparams_dict[INIT_MODE][1], std=fwd_weight_scale / np.sqrt(nb_inputs))
     MN_neuron_params.append(A1)
 
     A2 = torch.empty((nb_inputs,), device=device, dtype=dtype, requires_grad=True).to(device)
-    torch.nn.init.normal_(A2, mean=0.0, std=fwd_weight_scale / np.sqrt(nb_inputs))
+    torch.nn.init.normal_(A2, mean=MNparams_dict[INIT_MODE][2], std=fwd_weight_scale / np.sqrt(nb_inputs))
     MN_neuron_params.append(A2)
     # neurons.append({'mn' : MN_neuron(params['nb_channels']*params['nb_input_copies'], a, A1, A2).to(device)})
 
@@ -818,7 +814,7 @@ def build_and_train(params, ds_train, ds_test, epochs=epochs,neurons = []):
 
     # a fixed learning rate is already defined within the train function, that's why here it is omitted
     # print(neurons)
-    loss_hist, accs_hist, best_acc_layers, ttc_hist,layers_mean,enc_mean,spk_input,best_MNparams_update,MNparams_coll = train(params, ds_train, nb_epochs=epochs, opt_parameters=opt_parameters,
+    loss_hist, accs_hist, best_acc_layers, ttc_hist,layers_mean,enc_mean,spk_input,best_MNparams_update,MNparams_coll,layers_update_coll = train(params, ds_train, nb_epochs=epochs, opt_parameters=opt_parameters,
                                                  layers=layers, dataset_test=ds_test,params_enc=enc_params, MN_neuron_params=MN_neuron_params, neurons = neurons)
 
     # best training and test at best training
@@ -841,7 +837,7 @@ def build_and_train(params, ds_train, ds_test, epochs=epochs,neurons = []):
                                                                                                   acc_train_at_best_test,
                                                                                                   idx_best_test + 1))  # only from training
 
-    return loss_hist, accs_hist, best_acc_layers,layers_mean,enc_mean,spk_input, best_MNparams_update,MNparams_coll
+    return loss_hist, accs_hist, best_acc_layers,layers_mean,enc_mean,spk_input, best_MNparams_update,MNparams_coll, layers_update_coll
 
 
 # In[195]:
@@ -1235,8 +1231,8 @@ def run_neuralnetwork_trainMN():
         params['labels'] = labels
         params['data_steps'] = data_steps
 
-        loss_hist, acc_hist, best_layers,layers_mean,enc_mean,spk_input,best_MNparams,MNparams_coll = build_and_train(params, ds_train, ds_test, epochs=epochs)
-        return acc_hist,spk_input,best_layers,best_MNparams,MNparams_coll    # In[ ]:
+        loss_hist, acc_hist, best_layers,layers_mean,enc_mean,spk_input,best_MNparams,MNparams_coll,layers_update_coll = build_and_train(params, ds_train, ds_test, epochs=epochs)
+        return acc_hist,spk_input,best_layers,best_MNparams,MNparams_coll,layers_update_coll    # In[ ]:
 
 
     if not use_nni_weights:
