@@ -180,6 +180,10 @@ class Network(object):
         w1 = torch.empty((self.parameters['nb_inputs'], self.parameters['nb_outputs']), device=device, dtype=dtype, requires_grad=True)
         torch.nn.init.normal_(w1, mean=0.0, std=fwd_weight_scale / np.sqrt(self.parameters['nb_encoding']))
         self.train_params['w1'] = w1
+
+        w2 = torch.empty((self.parameters['nb_inputs'], self.parameters['nb_outputs']), device=device, dtype=dtype, requires_grad=True)
+        torch.nn.init.normal_(w2, mean=0.0, std=fwd_weight_scale / np.sqrt(self.parameters['nb_encoding']))
+        self.train_params['w2'] = w2
         # neurons.append({'mn' : MN_neuron(params['nb_channels']*params['nb_input_copies'], a, A1, A2).to(device)})
 
         # # Spiking network
@@ -208,11 +212,11 @@ class Network(object):
 
         torch.nn.init.eye_(self.neurons['MN'].linear.weight)
 
-        optimizer = torch.optim.Adamax([self.train_params[param] for param in self.train_params.keys()], lr=0.005, betas=(0.9, 0.995))  # params['lr'] lr=0.0015
+        optimizer = torch.optim.Adamax([self.train_params[param] for param in self.train_params.keys()], lr=1, betas=(0.9, 0.995))  # params['lr'] lr=0.0015
 
         log_softmax_fn = nn.LogSoftmax(dim=1)  # The log softmax function across output units
         loss_fn = nn.NLLLoss()  # The negative log likelihood loss function
-        self.train_params_history = {'w1':[],'a':[],'A1':[],'A2':[]}
+        self.train_params_history = {'w1':[],'a':[],'A1':[],'A2':[],'w2':[]}
         for e in range(nb_epochs):
             self.accs_per_batch = []
 
@@ -222,7 +226,7 @@ class Network(object):
 
                 x_local, y_local = x_local.to(device), y_local.to(device)
                 self.run_snn(x_local)
-                n_out_spikes = torch.sum(self.spikes_out['L1'], 1) # sum over time stamps
+                n_out_spikes = torch.sum(self.spikes_out['L2'], 1) # sum over time stamps
                 log_p_y = log_softmax_fn(n_out_spikes)
                 loss_val = loss_fn(log_p_y, y_local)
 
@@ -245,10 +249,8 @@ class Network(object):
             # print('A1_diff', (self.train_params['A1'].clone().detach().cpu().numpy() - prev_A1).max())
             # print('A2_diff', (self.train_params['A2'].clone().detach().cpu().numpy() - prev_A2).max())
             # print('w1_diff', (self.train_params['w1'].clone().detach().cpu().numpy() - prev_w1).max())
-            self.train_params_history['w1'].append(self.train_params['w1'].clone().detach().cpu().numpy())
-            self.train_params_history['a'].append(self.train_params['a'].clone().detach().cpu().numpy())
-            self.train_params_history['A1'].append(self.train_params['A1'].clone().detach().cpu().numpy())
-            self.train_params_history['A2'].append(self.train_params['A2'].clone().detach().cpu().numpy())
+            for train_key in self.train_params_history.keys():
+                self.train_params_history[train_key].append(self.train_params[train_key].clone().detach().cpu().numpy())
             # params_learning_save.append(self.train_params)
             mean_accs = np.mean(self.accs_per_batch)
             print('epoch',e,'acc(%)', mean_accs * 100)
@@ -285,6 +287,18 @@ class Network(object):
             I[:,t] = self.neurons['LIF'].state.I
         self.spikes_out['L1'] = spikes
 
+        h2 = torch.einsum("abc,cd->abd", (spikes, self.train_params['w2']))
+        V = torch.zeros((bs,h2.shape[1],h2.shape[2]), device=device)
+        I = torch.zeros((bs,h2.shape[1],h2.shape[2]), device=device)
+
+        spikes = torch.zeros((bs,h2.shape[1],h2.shape[2]), device=device)
+        for t in range(TOTTIME):
+            spikes[:,t] = self.neurons['LIF'](h2[:,t])
+            V[:,t] = self.neurons['LIF'].state.V
+            I[:,t] = self.neurons['LIF'].state.I
+        self.spikes_out['L2'] = spikes
+
+
     def plot_train_params(self):
         for key in self.train_params_history.keys():
             for time in range(len(self.train_params_history[key])):
@@ -292,14 +306,14 @@ class Network(object):
             plt.title(key)
             plt.figure()
 
-    def save_results(self):
-        where_to_save = 'data/params.pkl'
+    def save_results(self,name = ''):
+        where_to_save = 'data/' + name + 'params.pkl'
         with open(where_to_save, 'wb') as f:
             pickle.dump(self.parameters, f)
-        where_to_save = 'data/params_train.pkl'
+        where_to_save = 'data/' + name + 'params_train.pkl'
         with open(where_to_save, 'wb') as f:
             pickle.dump(self.train_params, f)
-        where_to_save = 'data/params_train_history.pkl'
+        where_to_save = 'data/' + name + 'params_train_history.pkl'
         with open(where_to_save, 'wb') as f:
             pickle.dump(self.train_params_history, f)
 class MN_neuron(nn.Module):
@@ -434,8 +448,8 @@ class SurrGradSpike(torch.autograd.Function):
 
 
 activation = SurrGradSpike.apply
-
+name = 'MN_LIF_LIF'
 nico = Network()
 nico.train()
-nico.save_results()
+nico.save_results(name = name)
 nico.plot_train_params()

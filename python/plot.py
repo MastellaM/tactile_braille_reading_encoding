@@ -200,7 +200,8 @@ def plot_fixedMN():
     plt.show()
 
 def collect_and_plot(who,collection):
-    print('len shape',len(collection[who][0].shape))
+    # print('len shape',len(collection[who][0].shape))
+    dict
     if len(collection[who][0].shape) == 1:
         data = np.zeros([len(collection[who]), collection[who][0].shape[0]])
         for epix, epoch_data in enumerate(collection[who]):
@@ -212,17 +213,37 @@ def collect_and_plot(who,collection):
             data[epix, :,:] = epoch_data
         plt.plot(data[:, :,0])
     plt.title(who)
+
+def collect_and_plot_morebeautiful(collection):
+    dict_data = {'epochs':[],'value':[],'params':[]}
+    dict_data2 = {'epochs':[],'value':[],'params':[]}
+    list_params = list(collection.keys())
+    for param in list_params:
+        for epoch in range(len(collection[param])):
+            if (param == 'w1') | (param == 'w2'):
+                data2 = collection[param][epoch].ravel()
+                dict_data2['epochs'].extend([epoch]*len(data2))
+                dict_data2['params'].extend([param]*len(data2))
+                dict_data2['value'].extend(list(data2))
+
+            else:
+                data = collection[param][epoch].ravel()
+                dict_data['epochs'].extend([epoch]*len(data))
+                dict_data['params'].extend([param]*len(data))
+                dict_data['value'].extend(list(data))
+    # plt.figure()
+    sns.lineplot(data = pd.DataFrame(dict_data), x = 'epochs',y='value',hue='params')
+    plt.figure()
+    sns.lineplot(data=pd.DataFrame(dict_data2), x='epochs', y='value', hue='params')
+
+
 def plot_mainMN_multilayers():
-    where_to_save = 'data/params_train_history.pkl'
+    name = 'MN_LIF_LIF'
+    where_to_save = 'data/' + name + 'params_train_history.pkl'
     with open(where_to_save, 'rb') as f:
         collection = pickle.load(f)
-    collect_and_plot('a',collection)
-    plt.figure()
-    collect_and_plot('A1',collection)
-    plt.figure()
-    collect_and_plot('A2',collection)
-    plt.figure()
-    collect_and_plot('w1',collection)
+    collect_and_plot_morebeautiful(collection)
+
 
     plt.show()
     print('ciao')
