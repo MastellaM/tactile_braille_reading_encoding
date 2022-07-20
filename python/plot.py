@@ -75,7 +75,12 @@ def plot_trainedMN():
     plt.plot(a_vector)
     plt.plot(A1_vector)
     plt.plot(A2_vector)
-
+    differenza_tra_i_vettori_a_in_tempo_0_e_a_in_temp_meno1 = a_vector[0, :] - a_vector[-1, :]
+    print('a_diff',differenza_tra_i_vettori_a_in_tempo_0_e_a_in_temp_meno1.max())
+    aaa = A2_vector[0,:]-A2_vector[-1,:]
+    print('A2_diff',aaa.max())
+    aaa = A1_vector[0,:] - A1_vector[-1,:]
+    print('A1_diff', aaa.max())
 
     params_vector = collection[6]
     w1 = np.zeros([len(params_vector),params_vector[0][0].shape[0],params_vector[0][0].shape[1]])
@@ -88,7 +93,8 @@ def plot_trainedMN():
     w1 = np.reshape(w1,(len(params_vector),params_vector[0][0].shape[0]*params_vector[0][0].shape[1],))
     w2 = np.reshape(w2,(len(params_vector),params_vector[0][1].shape[0]*params_vector[0][1].shape[1],))
     v1 = np.reshape(v1,(len(params_vector),params_vector[0][2].shape[0]*params_vector[0][2].shape[1],))
-
+    aaa = w1[0, :] - w1[-1, :]
+    print('ciao')
     # plt.figure()
     # plt.plot(a_vector[:400,:])
     # plt.figure()
@@ -96,7 +102,7 @@ def plot_trainedMN():
     # plt.figure()
     # plt.plot(A2_vector[:400,:])
 
-    aaa = w2[0,:]-w2[-1,:]
+
     plt.figure()
     plt.imshow(w1.T[:2000,:],aspect = 'auto')
     plt.figure()
@@ -107,23 +113,22 @@ def plot_trainedMN():
     plt.show()
     return collection
 
-collection = plot_trainedMN()
 
 # Plot
-mn_params = collection[5]
-n_epochs = len(mn_params)
-n_params = len(mn_params[0])
-params_list = ['a','A1','A2']
-dict_data = {'epochs':[],'value':[],'params':[]}
-for epoch in range(n_epochs):
-    for param in range(n_params):
-        data = np.array(mn_params[epoch][param].detach())
-        dict_data['epochs'].extend([epoch]*len(data))
-        dict_data['params'].extend([params_list[param]]*len(data))
-        dict_data['value'].extend(data)
-
-sns.lineplot(data=pd.DataFrame(dict_data), x='epochs', y='value', hue='params')
-plt.show()
+# mn_params = collection[5]
+# n_epochs = len(mn_params)
+# n_params = len(mn_params[0])
+# params_list = ['a','A1','A2']
+# dict_data = {'epochs':[],'value':[],'params':[]}
+# for epoch in range(n_epochs):
+#     for param in range(n_params):
+#         data = np.array(mn_params[epoch][param].detach())
+#         dict_data['epochs'].extend([epoch]*len(data))
+#         dict_data['params'].extend([params_list[param]]*len(data))
+#         dict_data['value'].extend(data)
+#
+# sns.lineplot(data=pd.DataFrame(dict_data), x='epochs', y='value', hue='params')
+# plt.show()
 
 #print(accuracy_list)
 #plt.plot(accuracy_list)
@@ -194,3 +199,54 @@ def plot_fixedMN():
     plt.legend(['Tonic spiking', 'Spike frequency adaptation','Hyperpolarizing spiking','Hyperpolarizing bursting','Tonic bursting', 'Mixed mode', 'Basal bistability', 'Preferred frequency', 'Spike latency'], loc ="lower right")
     plt.show()
 
+def collect_and_plot(who,collection):
+    # print('len shape',len(collection[who][0].shape))
+    dict
+    if len(collection[who][0].shape) == 1:
+        data = np.zeros([len(collection[who]), collection[who][0].shape[0]])
+        for epix, epoch_data in enumerate(collection[who]):
+            data[epix, :] = epoch_data
+        plt.plot(data[:, :])
+    elif len(collection[who][0].shape) == 2:
+        data = np.zeros([len(collection[who]), collection[who][0].shape[0], collection[who][0].shape[1]])
+        for epix, epoch_data in enumerate(collection[who]):
+            data[epix, :,:] = epoch_data
+        plt.plot(data[:, :,0])
+    plt.title(who)
+
+def collect_and_plot_morebeautiful(collection):
+    dict_data = {'epochs':[],'value':[],'params':[]}
+    dict_data2 = {'epochs':[],'value':[],'params':[]}
+    list_params = list(collection.keys())
+    for param in list_params:
+        for epoch in range(len(collection[param])):
+            if (param == 'w1') | (param == 'w2'):
+                data2 = collection[param][epoch].ravel()
+                dict_data2['epochs'].extend([epoch]*len(data2))
+                dict_data2['params'].extend([param]*len(data2))
+                dict_data2['value'].extend(list(data2))
+
+            else:
+                data = collection[param][epoch].ravel()
+                dict_data['epochs'].extend([epoch]*len(data))
+                dict_data['params'].extend([param]*len(data))
+                dict_data['value'].extend(list(data))
+    # plt.figure()
+    sns.lineplot(data = pd.DataFrame(dict_data), x = 'epochs',y='value',hue='params')
+    plt.figure()
+    sns.lineplot(data=pd.DataFrame(dict_data2), x='epochs', y='value', hue='params')
+
+
+def plot_mainMN_multilayers():
+    name = 'MN_LIF_LIF'
+    where_to_save = 'data/' + name + 'params_train_history.pkl'
+    with open(where_to_save, 'rb') as f:
+        collection = pickle.load(f)
+    collect_and_plot_morebeautiful(collection)
+
+
+    plt.show()
+    print('ciao')
+
+
+plot_mainMN_multilayers()
