@@ -14,6 +14,8 @@ from torchviz import make_dot
 from torch import nn
 from math import sqrt
 from collections import namedtuple
+import seaborn as sns
+import pandas as pd
 
 '''
 MN neuron as in : A Generalized Linear Integrate-and-Fire Neural Model Produces
@@ -30,6 +32,28 @@ else:
     device = torch.device("cpu")
     print("No GPU detected. Running on CPU.")
 dtype = torch.float
+
+
+def update_progress(progress, string):
+    import sys
+    barLength = 10  # Modify this to change the length of the progress bar
+    status = ""
+    if isinstance(progress, int):
+        progress = float(progress)
+    if not isinstance(progress, float):
+        progress = 0
+        status = "error: progress var must be float\r\n"
+    if progress < 0:
+        progress = 0
+        status = "Halt...\r\n"
+    if progress >= 1:
+        progress = 1
+        status = "Done...\r\n"
+    block = int(round(barLength * progress))
+    text = "\r" + string + ": [{0}] {1}% {2}".format("#" * block + "-" * (barLength - block), round(progress, 2) * 100,
+                                                     status)
+    sys.stdout.write(text)
+    sys.stdout.flush()
 
 
 def upsample(data, n=2):
@@ -52,12 +76,31 @@ class Network(object):
 
         self.train_params = {}
 
-        self.loss_per_epoch = []
-        self.accs_per_epoch = []
+        self.loss_per_batch = []
+        self.accs_per_batch = []
 
         self.generate_dataset()
         self.init_params()
         self.spikes_out = {}
+
+    def plot_spikes(self, who='L0'):
+        import pandas as pd
+        data = self.spikes_out[who].clone().detach().cpu().numpy()
+        # print(data[0,100])
+        # for sample_idx in range(data.shape[0]):
+        #     t, idx = np.where(data[sample_idx])
+        #     plt.scatter(t, idx+sample_idx*data.shape[2])
+        # plt.title(who)
+        #
+        dict_data = {'batch': [], 'time': [], 'idx': []}
+        for batch in range(data.shape[0]):  # batch size
+            t, idx = np.where(data[batch])  # tim x nrn id
+            dict_data['batch'].extend([batch] * len(t))
+            dict_data['time'].extend(list(t))
+            dict_data['idx'].extend(list(idx))
+
+        sns.scatterplot(data=pd.DataFrame(dict_data), x='time', y='idx', hue='batch')
+        # plt.show()
 
     def load_analog_data(self):
         # data structure: [trial number] x ['key'] x [time] x [sensor_nr]
@@ -135,14 +178,13 @@ class Network(object):
     def generate_dataset(self):
         ds_train, ds_test, labels, nb_channels, data_steps = self.load_analog_data()
 
-        self.generator = DataLoader(ds_train, batch_size=int(data_steps),
+        self.generator = DataLoader(ds_train, batch_size=128,
                                     shuffle=False, num_workers=2)
         self.parameters['labels'] = labels
         self.parameters['data_step'] = data_steps
-        print('Data steps', data_steps)
         self.parameters['nb_channels'] = nb_channels
         self.parameters['nb_inputs'] = nb_channels * self.parameters['nb_input_copies']
-        self.parameters['nb_outputs'] = self.parameters['nb_inputs']
+        self.parameters['nb_outputs'] = len(np.unique(labels))
 
     def init_params(self):
         self.tau_syn = self.parameters['tau_mem'] / self.parameters['tau_ratio']
@@ -163,20 +205,20 @@ class Network(object):
         torch.nn.init.normal_(enc_bias, mean=0.0, std=1.0)
 
         # MN Neurons
-        a = torch.empty((self.parameters['nb_inputs'],), device=device, dtype=dtype, requires_grad=True).to(device)
+        a = torch.empty((self.parameters['nb_outputs'],), device=device, dtype=dtype, requires_grad=True).to(device)
         torch.nn.init.normal_(a, mean=MNparams_dict[INIT_MODE][0],
                               std=fwd_weight_scale / np.sqrt(self.parameters['nb_inputs']))
-        self.train_params['a'] = a
+        self.parameters['a'] = a
 
-        A1 = torch.empty((self.parameters['nb_inputs'],), device=device, dtype=dtype, requires_grad=True).to(device)
+        A1 = torch.empty((self.parameters['nb_outputs'],), device=device, dtype=dtype, requires_grad=True).to(device)
         torch.nn.init.normal_(A1, mean=MNparams_dict[INIT_MODE][1],
                               std=fwd_weight_scale / np.sqrt(self.parameters['nb_inputs']))
-        self.train_params['A1'] = A1
+        self.parameters['A1'] = A1
 
-        A2 = torch.empty((self.parameters['nb_inputs'],), device=device, dtype=dtype, requires_grad=True).to(device)
+        A2 = torch.empty((self.parameters['nb_outputs'],), device=device, dtype=dtype, requires_grad=True).to(device)
         torch.nn.init.normal_(A2, mean=MNparams_dict[INIT_MODE][2],
                               std=fwd_weight_scale / np.sqrt(self.parameters['nb_inputs']))
-        self.train_params['A2'] = A2
+        self.parameters['A2'] = A2
         # neurons.append({'mn' : MN_neuron(params['nb_channels']*params['nb_input_copies'], a, A1, A2).to(device)})
 
         # # Spiking network
@@ -195,56 +237,85 @@ class Network(object):
 
     def train(self, nb_epochs=300):
         self.neurons = {'MN': MN_neuron(self.parameters['nb_inputs'], self.parameters['nb_outputs'],
-                                        a=self.train_params['a'], A1=self.train_params['A1'],
-                                        A2=self.train_params['A2'])}
+                                        a=self.parameters['a'], A1=self.parameters['A1'],
+                                        A2=self.parameters['A2'])}
 
+        self.train_params['a'] = self.neurons['MN'].a
+        self.train_params['A1'] = self.neurons['MN'].A1
+        self.train_params['A2'] = self.neurons['MN'].A2
         optimizer = torch.optim.Adamax([self.train_params[param] for param in self.train_params.keys()], lr=0.005,
                                        betas=(0.9, 0.995))  # params['lr'] lr=0.0015
 
         log_softmax_fn = nn.LogSoftmax(dim=1)  # The log softmax function across output units
         loss_fn = nn.NLLLoss()  # The negative log likelihood loss function
 
+        self.accs_hist = []
+        self.loss_hist = []
+        self.params_per_epochs = {}
+        for param in self.train_params.keys():
+            self.params_per_epochs[param] = []
         for e in range(nb_epochs):
 
             for x_local, y_local in self.generator:
+                # print('x_local shape:', x_local.shape)
+                self.neurons['MN'].init_state()
                 x_local, y_local = x_local.to(device), y_local.to(device)
-                print('Epoch e', e)
                 self.run_snn(x_local)
                 n_out_spikes = torch.sum(self.spikes_out['L0'], 1)  # sum over time stamps
-
                 log_p_y = log_softmax_fn(n_out_spikes)
-                print('shape n spikes', n_out_spikes.shape)
-                print('shape log py', log_p_y.shape)
-                print('shape y local', y_local.shape)
-                print('shape x local', x_local.shape)
+                #
+                # print('shape n spikes', n_out_spikes.shape)
+                # print('shape log py', log_p_y.shape)
+                # print('shape y local', y_local.shape)
+                # print('shape x local', x_local.shape)
+                # print(y_local)
                 loss_val = loss_fn(log_p_y, y_local)
 
                 optimizer.zero_grad()
                 loss_val.backward()
                 optimizer.step()
-                self.loss_per_epoch.append(loss_val.item())
+                self.loss_per_batch.append(loss_val.item())
 
                 # compare to labels
                 _, am = torch.max(n_out_spikes, 1)  # argmax over output units
                 tmp = np.mean((y_local == am).detach().cpu().numpy())
-                self.accs_per_epoch.append(tmp)
+                self.accs_per_batch.append(tmp)
+
+                for state in self.neurons['MN'].state:
+                    state.detach_()
+
+            # Store parameters:
+            for param in self.train_params.keys():
+                self.params_per_epochs[param].append(self.train_params[param])
+
+            mean_loss = np.mean(self.loss_per_batch)
+            self.loss_hist.append(mean_loss)
+
+            mean_accs = np.mean(self.accs_per_batch)
+            self.accs_hist.append(mean_accs)
+
+            update_progress((e + 1) / nb_epochs,
+                            "Train accuracy: " + str(np.round(self.accs_hist[-1] * 100, 2)) + '%, Loss: ' + str(
+                                np.round(mean_loss, 2)))
 
     def run_snn(self, x_local):
         TOTTIME = self.parameters['data_step']
-        V = torch.zeros(x_local.shape[1],x_local.shape[0], self.parameters['nb_outputs'], device=device)
-        Th = torch.zeros(x_local.shape[1],x_local.shape[0], self.parameters['nb_outputs'], device=device)
-        i1 = torch.zeros(x_local.shape[1],x_local.shape[0], self.parameters['nb_outputs'], device=device)
-        i2 = torch.zeros(x_local.shape[1],x_local.shape[0], self.parameters['nb_outputs'], device=device)
-        spikes = torch.zeros(x_local.shape[1],x_local.shape[0], self.parameters['nb_outputs'], device=device)
+        V = torch.zeros(x_local.shape[0], x_local.shape[1], self.parameters['nb_outputs'], device=device)
+        Th = torch.zeros(x_local.shape[0], x_local.shape[1], self.parameters['nb_outputs'], device=device)
+        i1 = torch.zeros(x_local.shape[0], x_local.shape[1], self.parameters['nb_outputs'], device=device)
+        i2 = torch.zeros(x_local.shape[0], x_local.shape[1], self.parameters['nb_outputs'], device=device)
+        spikes_in = x_local
+        spikes_out = torch.zeros(x_local.shape[0], x_local.shape[1], self.parameters['nb_outputs'], device=device)
 
         for t in range(TOTTIME):
-            print(x_local[t, :])
-            spikes[t] = self.neurons['MN'](x_local[:, t])
-            V[t] = self.neurons['MN'].state.V
-            Th[t] = self.neurons['MN'].state.Thr
-            i1[t] = self.neurons['MN'].state.i1
-            i2[t] = self.neurons['MN'].state.i2
-        self.spikes_out['L0'] = spikes
+            spikes_out[:, t] = self.neurons['MN'](spikes_in[:, t])
+            V[:, t] = self.neurons['MN'].state.V
+            Th[:, t] = self.neurons['MN'].state.Thr
+            i1[:, t] = self.neurons['MN'].state.i1
+            i2[:, t] = self.neurons['MN'].state.i2
+        self.spikes_out['L0'] = spikes_out
+
+        self.plot_spikes()
 
 
 class MN_neuron(nn.Module):
@@ -252,6 +323,8 @@ class MN_neuron(nn.Module):
 
     def __init__(self, n_in, n_out, a, A1, A2):
         super(MN_neuron, self).__init__()
+        # print('n_in', n_in)
+        # print('n_out', n_out)
         self.linear = nn.Linear(n_in, n_out, bias=False)
         self.C = 1
         self.EL = -0.07
@@ -265,6 +338,8 @@ class MN_neuron(nn.Module):
         self.k1 = 200  # units of 1/s
         self.k2 = 20  # units of 1/s
         self.dt = 1 / 1000
+        # print(a)
+        # print(n_out)
         self.a = nn.Parameter(torch.ones(n_out) * a, requires_grad=True)
         # self.A1 = A1 * self.C
         # self.A2 = A2 * self.C
@@ -273,8 +348,10 @@ class MN_neuron(nn.Module):
         self.state = None
         self.n_out = n_out
 
+    def init_state(self):
+        self.state = None
+
     def forward(self, x):
-        print('Forward MN')
         if self.state is None:
             self.state = self.NeuronState(V=torch.ones(x.shape[0], self.n_out, device=x.device) * self.EL,
                                           i1=torch.zeros(x.shape[0], self.n_out, device=x.device),
@@ -288,6 +365,8 @@ class MN_neuron(nn.Module):
 
         i1 += -self.k1 * i1 * self.dt
         i2 += -self.k2 * i2 * self.dt
+        # print('shape x', x.shape)
+        # print('shape linear x', self.linear(x))
         V += self.dt * (self.linear(x) + i1 + i2 - self.G * (V - self.EL)) / self.C
         Thr += self.dt * (self.a * (V - self.EL) - self.b * (Thr - self.Tinf))
 
@@ -341,5 +420,18 @@ class SurrGradSpike(torch.autograd.Function):
 
 activation = SurrGradSpike.apply
 
-nico = Network()
-nico.train()
+nb_epochs = 10
+net = Network()
+net.train(nb_epochs)
+
+print(net.params_per_epochs)
+params_list = list(net.train_params.keys())
+dict_data = {'epochs': [], 'value': [], 'params': []}
+for epoch in range(nb_epochs):
+    for param in params_list:
+        data = np.array(net.params_per_epochs[param][epoch].detach().cpu())
+        dict_data['epochs'].extend([epoch] * len(data))
+        dict_data['params'].extend([param] * len(data))
+        dict_data['value'].extend(list(data))
+
+sns.lineplot(data=pd.DataFrame(dict_data), x='epochs', y='value', hue='params')
